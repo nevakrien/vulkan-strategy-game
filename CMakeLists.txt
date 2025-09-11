@@ -7,7 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-add_executable(mygame src/main.cpp)
+# Build all sources under src/ (auto-updates on file changes)
+file(GLOB_RECURSE MYGAME_SOURCES CONFIGURE_DEPENDS src/*.cpp src/*.c)
+add_executable(mygame ${MYGAME_SOURCES})
+
+# Let #include "foo.hpp" find headers in src/
+target_include_directories(mygame PRIVATE src)
 
 # Vulkan headers (include-only)
 target_include_directories(mygame PRIVATE third_party/Vulkan-Headers/include)
