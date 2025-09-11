@@ -1,0 +1,65 @@
+cmake_minimum_required(VERSION 3.20)
+project(mygame LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Build third-party static
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+add_executable(mygame src/main.cpp)
+
+# Vulkan headers (include-only)
+target_include_directories(mygame PRIVATE third_party/Vulkan-Headers/include)
+
+# Link the system Vulkan loader (dynamic)
+if(WIN32)
+  target_link_libraries(mygame PRIVATE vulkan-1)
+elseif(APPLE)
+  # macOS: needs MoltenVK loader
+  find_library(MOLTENVK MoltenVK)
+  if(MOLTENVK)
+    target_link_libraries(mygame PRIVATE ${MOLTENVK})
+  endif()
+elseif(ANDROID)
+  # Android NDK ships libvulkan.so
+  target_link_libraries(mygame PRIVATE vulkan)
+elseif(UNIX)
+  # Linux / BSD
+  target_link_libraries(mygame PRIVATE vulkan)
+endif()
+
+
+# SDL2 (static) — fixed assumptions, no probing
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON  CACHE BOOL "" FORCE)
+set(SDL_TEST   OFF CACHE BOOL "" FORCE)
+set(SDL_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+
+# Disable everything except video/events
+set(SDL_VIDEO ON  CACHE BOOL "" FORCE)
+set(SDL_AUDIO ON  CACHE BOOL "" FORCE)
+set(SDL_EVENTS ON CACHE BOOL "" FORCE)
+set(SDL_RENDER OFF CACHE BOOL "" FORCE)
+set(SDL_JOYSTICK       OFF CACHE BOOL "" FORCE)
+set(SDL_HAPTIC         OFF CACHE BOOL "" FORCE)
+set(SDL_HIDAPI         OFF CACHE BOOL "" FORCE)
+set(SDL_SENSOR         OFF CACHE BOOL "" FORCE)
+set(SDL_POWER          OFF CACHE BOOL "" FORCE)
+set(SDL_LOCALE         OFF CACHE BOOL "" FORCE)
+
+#add SDL
+add_subdirectory(third_party/SDL EXCLUDE_FROM_ALL)
+target_link_libraries(mygame PRIVATE SDL2::SDL2-static)
+
+# FreeType (static) — no extras, straight build
+add_subdirectory(third_party/freetype EXCLUDE_FROM_ALL)
+target_link_libraries(mygame PRIVATE freetype)
+target_include_directories(mygame PRIVATE third_party/freetype/include)
+
+# Warnings (optional)
+if(MSVC)
+  target_compile_options(mygame PRIVATE /W4 /permissive-)
+else()
+  target_compile_options(mygame PRIVATE -Wall -Wextra -Wpedantic)
+endif()
