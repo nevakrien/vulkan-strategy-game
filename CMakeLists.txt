@@ -52,10 +52,22 @@ set(SDL_LOCALE         OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/SDL EXCLUDE_FROM_ALL)
 target_link_libraries(mygame PRIVATE SDL2::SDL2-static)
 
-# FreeType (static) — no extras, straight build
+# FreeType: build static and trim optional shared deps
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+# Turn off optional dependencies that would add more shared libs
+set(FT_DISABLE_ZLIB    ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BZIP2   ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG     ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BROTLI  ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+
 add_subdirectory(third_party/freetype EXCLUDE_FROM_ALL)
+
+# Link the *static* target provided by the subdir build
 target_link_libraries(mygame PRIVATE freetype)
 target_include_directories(mygame PRIVATE third_party/freetype/include)
+
 
 # Warnings (optional)
 if(MSVC)
