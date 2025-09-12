@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(mygame LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Build third-party static
@@ -42,20 +42,21 @@ set(SDL_TEST   OFF CACHE BOOL "" FORCE)
 set(SDL_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
 
 # Disable everything except video/events
-set(SDL_VIDEO ON  CACHE BOOL "" FORCE)
-set(SDL_AUDIO ON  CACHE BOOL "" FORCE)
+set(SDL_VIDEO  ON  CACHE BOOL "" FORCE)
+set(SDL_HIDAPI ON CACHE BOOL "" FORCE)
+set(SDL_AUDIO  ON  CACHE BOOL "" FORCE)
 set(SDL_EVENTS ON CACHE BOOL "" FORCE)
-set(SDL_RENDER OFF CACHE BOOL "" FORCE)
-set(SDL_JOYSTICK       OFF CACHE BOOL "" FORCE)
-set(SDL_HAPTIC         OFF CACHE BOOL "" FORCE)
-set(SDL_HIDAPI         OFF CACHE BOOL "" FORCE)
-set(SDL_SENSOR         OFF CACHE BOOL "" FORCE)
-set(SDL_POWER          OFF CACHE BOOL "" FORCE)
-set(SDL_LOCALE         OFF CACHE BOOL "" FORCE)
+
+set(SDL_RENDER   OFF CACHE BOOL "" FORCE)
+set(SDL_JOYSTICK OFF CACHE BOOL "" FORCE)
+set(SDL_HAPTIC   OFF CACHE BOOL "" FORCE)
+set(SDL_SENSOR   OFF CACHE BOOL "" FORCE)
+set(SDL_POWER    OFF CACHE BOOL "" FORCE)
+set(SDL_LOCALE   OFF CACHE BOOL "" FORCE)
 
 #add SDL
 add_subdirectory(third_party/SDL EXCLUDE_FROM_ALL)
-target_link_libraries(mygame PRIVATE SDL2::SDL2-static)
+target_link_libraries(mygame PRIVATE SDL3::SDL3-static)
 
 # FreeType: build static and trim optional shared deps
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
