@@ -19,13 +19,27 @@ extern int window_w;
 extern int window_h;
 
 struct VulkanGlobals {
-  VkInstance        instance        = VK_NULL_HANDLE;
-  VkPhysicalDevice  physical_device = VK_NULL_HANDLE;
-  VkDevice          device          = VK_NULL_HANDLE;
-  uint32_t          queue_family    = 0;
-  VkQueue           queue           = VK_NULL_HANDLE;
-  VkSurfaceKHR      surface         = VK_NULL_HANDLE;
+    // Core instance/device objects
+    VkInstance        instance        = VK_NULL_HANDLE;
+    VkPhysicalDevice  physical_device = VK_NULL_HANDLE;
+    VkDevice          device          = VK_NULL_HANDLE;
 
+    // Queue family indices
+    uint32_t          graphics_family = 0;
+    uint32_t          present_family  = 0;
+
+    // Queues
+    VkQueue           graphics_queue  = VK_NULL_HANDLE;
+    VkQueue           present_queue   = VK_NULL_HANDLE;
+
+    // Surface
+    VkSurfaceKHR      surface         = VK_NULL_HANDLE;
+
+    // Swapchain
+    VkSwapchainKHR              swapchain        = VK_NULL_HANDLE;
+    std::vector<VkImage>        swapchain_images;
+    VkFormat                    swapchain_format = VK_FORMAT_UNDEFINED;
+    VkExtent2D                  swapchain_extent = {};
 };
 
 
