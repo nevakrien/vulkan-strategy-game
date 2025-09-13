@@ -1,19 +1,24 @@
-#include <iostream>
-#include "platform.hpp"
+// #include <iostream>
+// #include "platform.hpp"
 
-int main() {
-  std::cout << "hello, world 👋 \n";
+// int main() {
+//   std::cout << "hello, world 👋 \n";
 
+//   print_libs();
   
-  if(!platform_init())
-    return 1;
-  print_libs();
+//   if(!platform_init())
+//     return 1;
   
-  while(!platform_should_quit()){
+//   std::cout << "platform inilized \n";
 
-  }
 
-  platform_shutdown();
+//   while(!platform_should_quit()){
 
-  return 0;
-}
+//   }
+
+//   std::cout << "cleanup \n";
+
+//   platform_shutdown();
+
+//   return 0;
+// }

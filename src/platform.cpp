@@ -361,6 +361,29 @@ bool platform_init() {
             chosenExtent.width, chosenExtent.height, count,
             (int)chosenFormat.format, (int)chosenMode);
 }
+
+// //comands
+// {
+//   VkCommandPoolCreateInfo pool_info{};
+//     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+//     pool_info.queueFamilyIndex = g_vulkan.graphics_family;
+//     // RESET flag lets you individually reset command buffers if needed
+//     pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+//    VK_CHECK(vkCreateCommandPool(g_vulkan.device, &pool_info, nullptr, &g_vulkan.command_pool));
+
+//     g_vulkan.command_buffers.resize(g_vulkan.framebuffers.size());
+
+
+//     VkCommandBufferAllocateInfo ai{};
+//     ai.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+//     ai.commandPool        = g_vulkan.command_pool;          // created earlier
+//     ai.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+//     ai.commandBufferCount = static_cast<uint32_t>(g_vulkan.command_buffers.size());
+
+//     VK_CHECK(vkAllocateCommandBuffers(g_vulkan.device, &ai, g_vulkan.command_buffers.data()));
+
+// }
 // (next steps elsewhere: create image views per swapchain image, depth buffer, framebuffers, etc.)
 
 
@@ -378,6 +401,12 @@ void platform_shutdown() {
       g_vulkan.swapchain_format = VK_FORMAT_UNDEFINED;
       g_vulkan.swapchain_extent = {};
   }
+
+  // if (g_vulkan.command_pool != VK_NULL_HANDLE) {
+  //     vkDestroyCommandPool(g_vulkan.device, g_vulkan.command_pool, nullptr);
+  //     g_vulkan.command_pool = VK_NULL_HANDLE;
+  //      g_vulkan.command_buffers.clear();
+  // }
 
   if (g_vulkan.device)     { vkDestroyDevice(g_vulkan.device, nullptr); g_vulkan.device = VK_NULL_HANDLE; }
   if (g_vulkan.surface)    { SDL_Vulkan_DestroySurface(g_vulkan.instance, g_vulkan.surface, nullptr); g_vulkan.surface = VK_NULL_HANDLE; }
