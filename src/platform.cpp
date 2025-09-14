@@ -14,6 +14,17 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
+
+//we need to check aginst os prefred gpu which isnt exposed by vulkan
+#if defined(SDL_VIDEO_DRIVER_X11)
+  #include <X11/Xlib.h>
+  #include <X11/Xlib-xcb.h>
+  #include <xcb/xcb.h>
+#elif defined(_WIN32)
+  #include <windows.h>    // LoadLibraryA, GetProcAddress
+  #include <dxgi1_6.h>    // headers available at build time; runtime is probed dynamically
+#endif
+
 // GLOBALS
 SDL_Window* g_window = nullptr;
 int window_w = 0;
@@ -209,8 +220,83 @@ bool platform_init(uint32_t vulkan_version) {
     g_vulkan.graphics_family = UINT32_MAX;
     g_vulkan.present_family  = UINT32_MAX;
 
+
+    // --- platform hint state (mutually exclusive) --------------------------------
+    #if defined(SDL_VIDEO_DRIVER_X11)
+    Display*          sel_dpy  = nullptr;
+    xcb_connection_t* sel_conn = nullptr;
+    xcb_visualid_t    sel_vis  = 0;
+    {
+        SDL_PropertiesID wp = SDL_GetWindowProperties(g_window);
+        sel_dpy = (Display*)SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+        if (sel_dpy) {
+            sel_conn = XGetXCBConnection(sel_dpy);
+            uint64_t visualid = SDL_GetNumberProperty(wp, SDL_PROP_WINDOW_X11_VISUALID_NUMBER, 0);
+            sel_vis = (xcb_visualid_t)visualid;
+        }
+    }
+    #elif defined(_WIN32)
+    // Dynamically resolve dxgi.dll and CreateDXGIFactory1, then QI to IDXGIFactory6.
+    // If anything fails, we just won't have an OS hint.
+    LUID  os_pref_luid{}; bool have_os_pref_luid = false;
+    {
+        using PFN_CreateDXGIFactory1 = HRESULT (WINAPI*)(REFIID, void**);
+        HMODULE hDXGI = GetModuleHandleA("dxgi.dll");
+        if (!hDXGI) hDXGI = LoadLibraryA("dxgi.dll");
+        if (hDXGI) {
+            auto pCreateDXGIFactory1 =
+                reinterpret_cast<PFN_CreateDXGIFactory1>(GetProcAddress(hDXGI, "CreateDXGIFactory1"));
+            if (pCreateDXGIFactory1) {
+                IDXGIFactory1* f1 = nullptr;
+                if (SUCCEEDED(pCreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&f1)) && f1) {
+                    IDXGIFactory6* f6 = nullptr;
+                    if (SUCCEEDED(f1->QueryInterface(__uuidof(IDXGIFactory6), (void**)&f6)) && f6) {
+                        IDXGIAdapter1* a = nullptr;
+                        if (SUCCEEDED(f6->EnumAdapterByGpuPreference(
+                                0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, __uuidof(IDXGIAdapter1), (void**)&a)) && a) {
+                            DXGI_ADAPTER_DESC1 d{}; a->GetDesc1(&d);
+                            os_pref_luid = d.AdapterLuid; have_os_pref_luid = true;
+                            a->Release();
+                        }
+                        f6->Release();
+                    }
+                    f1->Release();
+                }
+            }
+        }
+    }
+    #endif
+    // -----------------------------------------------------------------------------
+
+    // now we loop over avilable gpus
+    // best-so-far according to (os_selected, unified, type_rank, score)
+    bool     best_os_selected = false;
+    bool     best_unified     = false;
+    int      best_type_rank   = -1;   // 3: discrete, 2: integrated, 1: virtual, 0: other/CPU
+    uint64_t best_score       = 0;
+
+    // clear globals before scanning
+    g_vulkan.physical_device = VK_NULL_HANDLE;
+    g_vulkan.graphics_family = UINT32_MAX;
+    g_vulkan.present_family  = UINT32_MAX;
+
     for (auto pd : devs) {
-        // --- find graphics & present families (can be different) ---
+        VkPhysicalDeviceProperties device_props{};
+        vkGetPhysicalDeviceProperties(pd, &device_props);
+        LOG("considering physical device %s", device_props.deviceName);
+
+        // --- require VK_KHR_swapchain
+        uint32_t extCount = 0;
+        VK_CHECK(vkEnumerateDeviceExtensionProperties(pd, nullptr, &extCount, nullptr));
+        std::vector<VkExtensionProperties> exts(extCount);
+        VK_CHECK(vkEnumerateDeviceExtensionProperties(pd, nullptr, &extCount, exts.data()));
+        bool has_swapchain = false;
+        for (const auto& e : exts) {
+            if (std::strcmp(e.extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) { has_swapchain = true; break; }
+        }
+        if (!has_swapchain) continue;
+
+        // --- find graphics & present families (present strengthened on X11)
         uint32_t qcount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(pd, &qcount, nullptr);
         std::vector<VkQueueFamilyProperties> qprops(qcount);
@@ -224,6 +310,11 @@ bool platform_init(uint32_t vulkan_version) {
             if (pres == UINT32_MAX) {
                 VkBool32 canPresent = VK_FALSE;
                 VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, g_vulkan.surface, &canPresent));
+            #if defined(SDL_VIDEO_DRIVER_X11)
+                if (canPresent && sel_conn && sel_vis) {
+                    canPresent = vkGetPhysicalDeviceXcbPresentationSupportKHR(pd, i, sel_conn, sel_vis);
+                }
+            #endif
                 if (canPresent) pres = i;
             }
 
@@ -231,29 +322,95 @@ bool platform_init(uint32_t vulkan_version) {
         }
         if (gfx == UINT32_MAX || pres == UINT32_MAX) continue;
 
-        // --- require VK_KHR_swapchain ---
-        uint32_t extCount = 0;
-        VK_CHECK(vkEnumerateDeviceExtensionProperties(pd, nullptr, &extCount, nullptr));
-        std::vector<VkExtensionProperties> exts(extCount);
-        VK_CHECK(vkEnumerateDeviceExtensionProperties(pd, nullptr, &extCount, exts.data()));
-        bool has_swapchain = false;
-        for (const auto& e : exts) {
-            if (strcmp(e.extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) { has_swapchain = true; break; }
+        // --- try to unify: prefer one family that does both for THIS window
+        bool unified = false;
+        for (uint32_t i = 0; i < qcount; ++i) {
+            if (qprops[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                VkBool32 sp = VK_FALSE;
+                VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, g_vulkan.surface, &sp));
+            #if defined(SDL_VIDEO_DRIVER_X11)
+                if (sp && sel_conn && sel_vis) {
+                    sp = vkGetPhysicalDeviceXcbPresentationSupportKHR(pd, i, sel_conn, sel_vis);
+                }
+            #endif
+                if (sp) { gfx = pres = i; unified = true; break; }
+            }
         }
-        if (!has_swapchain) continue;
 
-        // --- surface must have at least one format & present mode ---
+        // --- surface must have at least one format & present mode
         uint32_t fmtCount = 0, pmCount = 0;
         VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(pd, g_vulkan.surface, &fmtCount, nullptr));
         VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(pd, g_vulkan.surface, &pmCount, nullptr));
         if (fmtCount == 0 || pmCount == 0) continue;
 
-        // success: commit and stop on the first valid device
-        g_vulkan.physical_device = pd;
-        g_vulkan.graphics_family = gfx;
-        g_vulkan.present_family  = pres;
-        break;
+        // --- OS-selected (platform-specific)
+        bool os_selected = false;
+    #if defined(SDL_VIDEO_DRIVER_X11)
+        os_selected = (sel_conn && sel_vis); // we verified present for THIS window’s connection/visual
+    #elif defined(_WIN32)
+        if (have_os_pref_luid) {
+            VkPhysicalDeviceIDProperties id{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+            VkPhysicalDeviceProperties2  p2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+            p2.pNext = &id;
+            vkGetPhysicalDeviceProperties2(pd, &p2);
+            if (id.deviceLUIDValid) {
+                os_selected = (0 == std::memcmp(&os_pref_luid, &id.deviceLUID, sizeof(LUID)));
+            }
+        } else {
+            os_selected = false;
+        }
+    #else
+        os_selected = false;
+    #endif
+
+        // --- type rank (3: discrete, 2: integrated, 1: virtual, 0: other/CPU)
+        int type_rank = 0;
+        switch (device_props.deviceType) {
+            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:   type_rank = 3; break;
+            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: type_rank = 2; break;
+            case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:    type_rank = 1; break;
+            case VK_PHYSICAL_DEVICE_TYPE_OTHER:
+            case VK_PHYSICAL_DEVICE_TYPE_CPU:
+            default:                                     type_rank = 0; break;
+        }
+
+        // --- capacity score = device-local VRAM (MB) × maxComputeWorkGroupInvocations
+        VkPhysicalDeviceMemoryProperties mp{};
+        vkGetPhysicalDeviceMemoryProperties(pd, &mp);
+        uint64_t vramBytes = 0;
+        for (uint32_t i = 0; i < mp.memoryHeapCount; ++i)
+            if (mp.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+                vramBytes += mp.memoryHeaps[i].size;
+
+        // keep CPU/lavapipe/llvmpipe from “winning” via system RAM
+        if (device_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) vramBytes = 0;
+
+        const uint64_t vramMB        = vramBytes >> 20;
+        const uint64_t current_score = vramMB * device_props.limits.maxComputeWorkGroupInvocations;
+
+        // --- choose best by (os_selected, unified, type_rank, score)
+        const bool better =
+            (os_selected != best_os_selected) ? os_selected :
+            (unified     != best_unified    ) ? unified     :
+            (type_rank   != best_type_rank  ) ? (type_rank > best_type_rank) :
+            (current_score > best_score);
+
+        if (better) {
+            best_os_selected = os_selected;
+            best_unified     = unified;
+            best_type_rank   = type_rank;   // 3: discrete, 2: integrated, 1: virtual, 0: other/CPU
+            best_score       = current_score;
+
+            // assign directly to globals
+            g_vulkan.physical_device = pd;
+            g_vulkan.graphics_family = gfx;
+            g_vulkan.present_family  = pres;
+
+            // short-circuit on top-priority combo
+            if (best_os_selected && best_unified) break;
+        }
     }
+
 
     if (g_vulkan.physical_device == VK_NULL_HANDLE) {
         LOG_ERROR(

@@ -118,6 +118,15 @@ static constexpr TBuiltInResource InitResources()
 
 static TBuiltInResource defualt_Resource = InitResources();
 
+static inline int glslang_client_number(glslang::EShTargetClientVersion v) {
+    switch (v) {
+        case glslang::EShTargetVulkan_1_1: return 110;
+        case glslang::EShTargetVulkan_1_2: return 120;
+        case glslang::EShTargetVulkan_1_3: return 130;
+        default:                            return 100;  // Vulkan 1.0
+    }
+}
+
 namespace shader {
 CompileResult compile_glsl_to_spirv(EShLanguage stage,
                                     std::string_view source,
@@ -133,8 +142,7 @@ CompileResult compile_glsl_to_spirv(EShLanguage stage,
     shader.setEntryPoint(opt.entry);
     shader.setSourceEntryPoint(opt.entry);
 
-    shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan,
-                   vk_client_number(opt.vulkanTarget));
+    shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan,glslang_client_number(opt.vulkanTarget));
     shader.setEnvClient(glslang::EShClientVulkan, opt.vulkanTarget);
     shader.setEnvTarget(glslang::EShTargetSpv,    opt.spirvTarget);
 

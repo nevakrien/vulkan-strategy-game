@@ -233,7 +233,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (!platform_init(vk_client_number(opt.vulkanTarget))) return 1;
+    if (!platform_init(vk_client_convert(opt.vulkanTarget))) return 1;
     // if (!platform_init()) return 1;
 
 

@@ -62,7 +62,7 @@ VkShaderModule make_shader_module(VkDevice device, const std::vector<uint32_t>& 
 
 } // namespace shader
 
-static inline int vk_client_number(glslang::EShTargetClientVersion v) {
+static inline int vk_client_convert(glslang::EShTargetClientVersion v) {
     switch (v) {
         case glslang::EShTargetVulkan_1_1: return VK_API_VERSION_1_1;
         case glslang::EShTargetVulkan_1_2: return VK_API_VERSION_1_2;
@@ -70,5 +70,7 @@ static inline int vk_client_number(glslang::EShTargetClientVersion v) {
         default:                            return VK_API_VERSION_1_0;
     }
 }
+
+
 
 #endif // MYGAME_SHADER_COMPILE_HPP
