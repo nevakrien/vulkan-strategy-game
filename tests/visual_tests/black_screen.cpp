@@ -9,7 +9,6 @@
 
 static int run_vulkan_smoke_test_clear_black()
 {
-    std::vector<VkImageView>    swapchain_image_views;
     VkRenderPass                render_pass = VK_NULL_HANDLE;
     std::vector<VkFramebuffer>  framebuffers;
 
@@ -19,29 +18,6 @@ static int run_vulkan_smoke_test_clear_black()
     VkSemaphore image_available = VK_NULL_HANDLE;
     VkSemaphore render_finished = VK_NULL_HANDLE;
     VkFence     in_flight_fence = VK_NULL_HANDLE;
-
-    // Image views
-    {
-        const size_t n = g_vulkan.swapchain_images.size();
-        swapchain_image_views.resize(n);
-        for (size_t i = 0; i < n; ++i) {
-            VkImageViewCreateInfo info{};
-            info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            info.image = g_vulkan.swapchain_images[i];
-            info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-            info.format = g_vulkan.swapchain_format;
-            info.components = {
-                VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-                VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY
-            };
-            info.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-            info.subresourceRange.baseMipLevel   = 0;
-            info.subresourceRange.levelCount     = 1;
-            info.subresourceRange.baseArrayLayer = 0;
-            info.subresourceRange.layerCount     = 1;
-            VK_CHECK(vkCreateImageView(g_vulkan.device, &info, nullptr, &swapchain_image_views[i]));
-        }
-    }
 
     // Render pass
     {
@@ -86,10 +62,10 @@ static int run_vulkan_smoke_test_clear_black()
 
     // Framebuffers
     {
-        const size_t n = swapchain_image_views.size();
+        const size_t n = g_vulkan.swapchain_image_views.size();
         framebuffers.resize(n);
         for (size_t i = 0; i < n; ++i) {
-            VkImageView attachments[] = { swapchain_image_views[i] };
+            VkImageView attachments[] = { g_vulkan.swapchain_image_views[i] };
             VkFramebufferCreateInfo fb{};
             fb.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             fb.renderPass      = render_pass;
@@ -216,9 +192,6 @@ static int run_vulkan_smoke_test_clear_black()
     framebuffers.clear();
 
     if (render_pass) vkDestroyRenderPass(g_vulkan.device, render_pass, nullptr);
-
-    for (auto iv : swapchain_image_views) if (iv) vkDestroyImageView(g_vulkan.device, iv, nullptr);
-    swapchain_image_views.clear();
 
     return 0;
 }

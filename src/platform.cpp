@@ -357,6 +357,25 @@ bool platform_init() {
     g_vulkan.swapchain_format = chosenFormat.format;
     g_vulkan.swapchain_extent = chosenExtent;
 
+    g_vulkan.swapchain_image_views.resize(count);
+    for (size_t i = 0; i < count; ++i) {
+        VkImageViewCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        info.image = g_vulkan.swapchain_images[i];
+        info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        info.format = g_vulkan.swapchain_format;
+        info.components = {
+            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY
+        };
+        info.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        info.subresourceRange.baseMipLevel   = 0;
+        info.subresourceRange.levelCount     = 1;
+        info.subresourceRange.baseArrayLayer = 0;
+        info.subresourceRange.layerCount     = 1;
+        VK_CHECK(vkCreateImageView(g_vulkan.device, &info, nullptr, &g_vulkan.swapchain_image_views[i]));
+    }
+
     SDL_Log("Swapchain: %ux%u, %u images, fmt=%d, present=%d",
             chosenExtent.width, chosenExtent.height, count,
             (int)chosenFormat.format, (int)chosenMode);
@@ -395,6 +414,9 @@ bool platform_init() {
 void platform_shutdown() {
   if (g_vulkan.device)     { vkDeviceWaitIdle(g_vulkan.device);}
   if (g_vulkan.swapchain != VK_NULL_HANDLE) {
+      for (auto iv : g_vulkan.swapchain_image_views) if (iv) vkDestroyImageView(g_vulkan.device, iv, nullptr);
+      g_vulkan.swapchain_image_views.clear();
+
       vkDestroySwapchainKHR(g_vulkan.device, g_vulkan.swapchain, nullptr);
       g_vulkan.swapchain = VK_NULL_HANDLE;
       g_vulkan.swapchain_images.clear();

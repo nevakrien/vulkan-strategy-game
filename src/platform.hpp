@@ -38,6 +38,7 @@ struct VulkanGlobals {
     // Swapchain
     VkSwapchainKHR              swapchain        = VK_NULL_HANDLE;
     std::vector<VkImage>        swapchain_images;
+    std::vector<VkImageView>    swapchain_image_views;
     VkFormat                    swapchain_format = VK_FORMAT_UNDEFINED;
     VkExtent2D                  swapchain_extent = {};
 
