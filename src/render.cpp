@@ -1,4 +1,5 @@
 #include "render.hpp"
+#include <cassert>
 
 static void build_color_only_renderpass_and_fbos(
     VkDevice device,
@@ -160,4 +161,103 @@ void FrameSync::shutdown(VkDevice device) {
     if (in_flight_fence) { vkDestroyFence(device, in_flight_fence, nullptr); in_flight_fence = VK_NULL_HANDLE; }
     if (render_finished) { vkDestroySemaphore(device, render_finished, nullptr); render_finished = VK_NULL_HANDLE; }
     if (image_available) { vkDestroySemaphore(device, image_available, nullptr); image_available = VK_NULL_HANDLE; }
+}
+
+
+// -----------comands------------------
+void CommandResources::record_clear_one(
+    size_t index,
+    const RenderTargets& rt,
+    VkExtent2D extent,
+    const VkClearColorValue& color,
+    VkCommandBufferUsageFlags usage
+) {
+    assert(index < buffers.size());
+    assert(index < rt.framebuffers.size());
+
+    VkCommandBuffer cb = buffers[index];
+
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = usage;
+    VK_CHECK(vkBeginCommandBuffer(cb, &begin));
+
+    VkClearValue clear{};
+    clear.color = color;
+
+    VkRenderPassBeginInfo rpbi{};
+    rpbi.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpbi.renderPass        = rt.render_pass;
+    rpbi.framebuffer       = rt.framebuffers[index];
+    rpbi.renderArea.offset = {0, 0};
+    rpbi.renderArea.extent = extent;
+    rpbi.clearValueCount   = 1;
+    rpbi.pClearValues      = &clear;
+
+    vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdEndRenderPass(cb);
+
+    VK_CHECK(vkEndCommandBuffer(cb));
+}
+
+void CommandResources::record_clear_all(
+    const RenderTargets& rt,
+    VkExtent2D extent,
+    const VkClearColorValue& color,
+    VkCommandBufferUsageFlags usage
+) {
+    assert(buffers.size() == rt.framebuffers.size());
+    for (size_t i = 0; i < buffers.size(); ++i) {
+        record_clear_one(i, rt, extent, color, usage);
+    }
+}
+
+VkPipelineStageFlags CommandResources::submit_one(
+    VkQueue queue,
+    uint32_t imageIndex,
+    const FrameSync& sync,
+    VkPipelineStageFlags waitDstStage,
+    VkFence fence
+) const {
+    assert(imageIndex < buffers.size());
+    assert(sync.image_available != VK_NULL_HANDLE);
+    assert(sync.render_finished != VK_NULL_HANDLE);
+
+    if (fence == VK_NULL_HANDLE) {
+        fence = sync.in_flight_fence;
+    }
+
+    VkPipelineStageFlags stageMask = waitDstStage; // must outlive submit struct
+
+    VkSubmitInfo submit{};
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.waitSemaphoreCount   = 1;
+    submit.pWaitSemaphores      = &sync.image_available;
+    submit.pWaitDstStageMask    = &stageMask;
+    submit.commandBufferCount   = 1;
+    submit.pCommandBuffers      = &buffers[imageIndex];
+    submit.signalSemaphoreCount = 1;
+    submit.pSignalSemaphores    = &sync.render_finished;
+
+    VK_CHECK(vkQueueSubmit(queue, 1, &submit, fence));
+    return stageMask;
+}
+
+//----------sync------------------------
+VkResult FrameSync::present_one(
+    VkQueue presentQueue,
+    VkSwapchainKHR swapchain,
+    uint32_t imageIndex
+) const {
+    assert(render_finished != VK_NULL_HANDLE);
+
+    VkPresentInfoKHR present{};
+    present.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present.waitSemaphoreCount = 1;
+    present.pWaitSemaphores    = &render_finished;
+    present.swapchainCount     = 1;
+    present.pSwapchains        = &swapchain;
+    present.pImageIndices      = &imageIndex;
+
+    return vkQueuePresentKHR(presentQueue, &present);
 }

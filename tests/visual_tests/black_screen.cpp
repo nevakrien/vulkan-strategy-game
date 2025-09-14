@@ -24,29 +24,8 @@ static int run_vulkan_smoke_test_clear_black()
               static_cast<uint32_t>(rt.framebuffers.size()));
 
     // Record clear-to-black into each command buffer
-    for (size_t i = 0; i < cmds.buffers.size(); ++i) {
-        VkCommandBufferBeginInfo begin{};
-        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-        VK_CHECK(vkBeginCommandBuffer(cmds.buffers[i], &begin));
-
-        VkClearValue clear{};
-        clear.color = {{0.f, 0.f, 0.f, 1.f}};
-
-        VkRenderPassBeginInfo rpbi{};
-        rpbi.sType                    = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpbi.renderPass               = rt.render_pass;
-        rpbi.framebuffer              = rt.framebuffers[i];
-        rpbi.renderArea.offset        = {0, 0};
-        rpbi.renderArea.extent        = g_vulkan.swapchain_extent;
-        rpbi.clearValueCount          = 1;
-        rpbi.pClearValues             = &clear;
-
-        vkCmdBeginRenderPass(cmds.buffers[i], &rpbi, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdEndRenderPass(cmds.buffers[i]);
-
-        VK_CHECK(vkEndCommandBuffer(cmds.buffers[i]));
-    }
+    VkClearColorValue black{{0.f, 0.f, 0.f, 1.f}};
+    cmds.record_clear_all(rt, g_vulkan.swapchain_extent, black);
 
     // Semaphores + fence
     sync.init(g_vulkan.device);
@@ -63,28 +42,9 @@ static int run_vulkan_smoke_test_clear_black()
         if (acq == VK_ERROR_OUT_OF_DATE_KHR) break;
         VK_CHECK(acq);
 
-        VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        VkSubmitInfo submit{};
-        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit.waitSemaphoreCount   = 1;
-        submit.pWaitSemaphores      = &sync.image_available;
-        submit.pWaitDstStageMask    = &wait_stage;
-        submit.commandBufferCount   = 1;
-        submit.pCommandBuffers      = &cmds.buffers[image_index];
-        submit.signalSemaphoreCount = 1;
-        submit.pSignalSemaphores    = &sync.render_finished;
-
-        VK_CHECK(vkQueueSubmit(g_vulkan.graphics_queue, 1, &submit, sync.in_flight_fence));
-
-        VkPresentInfoKHR present{};
-        present.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        present.waitSemaphoreCount = 1;
-        present.pWaitSemaphores    = &sync.render_finished;
-        present.swapchainCount     = 1;
-        present.pSwapchains        = &g_vulkan.swapchain;
-        present.pImageIndices      = &image_index;
-
-        VkResult pres = vkQueuePresentKHR(g_vulkan.present_queue, &present);
+        cmds.submit_one(g_vulkan.graphics_queue, image_index, sync);
+        VkResult pres = sync.present_one(g_vulkan.present_queue, g_vulkan.swapchain, image_index);
+        
         if (pres == VK_ERROR_OUT_OF_DATE_KHR || pres == VK_SUBOPTIMAL_KHR) break;
         VK_CHECK(pres);
     }

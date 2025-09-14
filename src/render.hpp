@@ -23,6 +23,29 @@ struct RenderTargets {
     bool valid() const { return render_pass != VK_NULL_HANDLE; }
 };
 
+struct FrameSync {
+    VkSemaphore image_available = VK_NULL_HANDLE;
+    VkSemaphore render_finished = VK_NULL_HANDLE;
+    VkFence     in_flight_fence = VK_NULL_HANDLE;
+
+    void init(VkDevice device);
+    void shutdown(VkDevice device);
+
+    bool valid() const {
+        return image_available != VK_NULL_HANDLE &&
+               render_finished != VK_NULL_HANDLE &&
+               in_flight_fence != VK_NULL_HANDLE;
+    }
+
+    // Present a single image index from a swapchain, waiting on render_finished.
+    // Returns the VkResult from vkQueuePresentKHR.
+    VkResult present_one(
+        VkQueue presentQueue,
+        VkSwapchainKHR swapchain,
+        uint32_t imageIndex
+    ) const;
+};
+
 struct CommandResources {
     VkCommandPool                pool    = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> buffers;
@@ -37,21 +60,33 @@ struct CommandResources {
 
     void shutdown(VkDevice device);
     bool valid() const { return pool != VK_NULL_HANDLE; }
-};
 
-struct FrameSync {
-    VkSemaphore image_available = VK_NULL_HANDLE;
-    VkSemaphore render_finished = VK_NULL_HANDLE;
-    VkFence     in_flight_fence = VK_NULL_HANDLE;
 
-    void init(VkDevice device);
-    void shutdown(VkDevice device);
+    // Submit this->buffers[imageIndex] with the standard “imageAvailable -> draw -> renderFinished” chain.
+    // If fence == VK_NULL_HANDLE, uses sync.in_flight_fence by default.
+    // Returns the VkPipelineStageFlags used (useful if caller wants it later).
+    VkPipelineStageFlags submit_one(
+        VkQueue queue,
+        uint32_t imageIndex,
+        const FrameSync& sync,
+        VkPipelineStageFlags waitDstStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VkFence fence = VK_NULL_HANDLE
+    ) const;
 
-    bool valid() const {
-        return image_available != VK_NULL_HANDLE &&
-               render_finished != VK_NULL_HANDLE &&
-               in_flight_fence != VK_NULL_HANDLE;
-    }
+    void record_clear_one(
+        size_t index,
+        const RenderTargets& rt,
+        VkExtent2D extent,
+        const VkClearColorValue& color,
+        VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
+    );
+
+    void record_clear_all(
+        const RenderTargets& rt,
+        VkExtent2D extent,
+        const VkClearColorValue& color,
+        VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
+    );
 };
 
 #endif // RENDER_HPP
