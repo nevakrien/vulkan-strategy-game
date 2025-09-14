@@ -105,108 +105,7 @@ void print_libs() {
   }
 }
 
-
-
-//INIT SHUTDOWN
-bool platform_init(uint32_t vulkan_version) {
-    if (g_window) return true; // already init
-
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        LOG_ERROR( "SDL_Init failed: %s", SDL_GetError());
-        return false;
-    }
-    
-    if (!SDL_Vulkan_LoadLibrary(nullptr)) {
-        LOG_ERROR( "SDL_Vulkan_LoadLibrary failed: %s", SDL_GetError());
-        return false;
-    }
-
-    // Get the primary display's desktop mode
-    SDL_DisplayID display = SDL_GetPrimaryDisplay();
-    if (display == 0) {
-        LOG_ERROR( "SDL_GetPrimaryDisplay failed: %s", SDL_GetError());
-        return false;
-    }
-
-    const SDL_DisplayMode* dm = SDL_GetDesktopDisplayMode(display);
-    if (!dm) {
-        LOG_ERROR( "SDL_GetDesktopDisplayMode failed: %s", SDL_GetError());
-        return false;
-    }
-
-    // Create a fullscreen Vulkan window at the desktop resolution
-    g_window = SDL_CreateWindow(
-        kWindowTitle,
-        dm->w, dm->h,
-        SDL_WINDOW_VULKAN | SDL_WINDOW_FULLSCREEN);
-    if (!g_window) {
-        LOG_ERROR( "SDL_CreateWindow failed: %s", SDL_GetError());
-        SDL_Quit();
-        return false;
-    }
-
-    window_w = dm->w;
-    window_h = dm->h;
-    LOG("Fullscreen desktop %dx%d", window_w, window_h);
-
-    // -------------------------
-    // Vulkan Instance (SDL3)
-    // -------------------------
-    Uint32 extCount = 0;
-    const char* const* sdlExts = SDL_Vulkan_GetInstanceExtensions(&extCount);
-    if (!sdlExts || extCount == 0) {
-        LOG_ERROR( "SDL_Vulkan_GetInstanceExtensions failed: %s", SDL_GetError());
-        return false;
-    }
-    std::vector<const char*> instExts(sdlExts, sdlExts + extCount); // copy into std::vector
-
-    // Optional validation layer (Debug only, if installed)
-    std::vector<const char*> instLayers;
-#ifndef NDEBUG
-    {
-        uint32_t availCount = 0;
-        VK_CHECK(vkEnumerateInstanceLayerProperties(&availCount, nullptr));
-        std::vector<VkLayerProperties> avail(availCount);
-        VK_CHECK(vkEnumerateInstanceLayerProperties(&availCount, avail.data()));
-        const char* kValidation = "VK_LAYER_KHRONOS_validation";
-        bool found = false;
-        for (const auto& lp : avail) {
-            if (std::strcmp(lp.layerName, kValidation) == 0) { found = true; break; }
-        }
-        if (found) instLayers.push_back(kValidation);
-        else LOG("Validation layer not present; continuing without it.");
-    }
-#endif
-
-    VkApplicationInfo app{};
-    app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    app.pApplicationName = "mygame";
-    app.applicationVersion = VK_MAKE_VERSION(0,0,1);
-    app.pEngineName = "mygame";
-    app.engineVersion = VK_MAKE_VERSION(0,0,1);
-    app.apiVersion = vulkan_version;
-
-    VkInstanceCreateInfo ici{};
-    ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    ici.pApplicationInfo = &app;
-    ici.enabledExtensionCount = static_cast<uint32_t>(instExts.size());
-    ici.ppEnabledExtensionNames = instExts.data();
-    ici.enabledLayerCount = static_cast<uint32_t>(instLayers.size());
-    ici.ppEnabledLayerNames = instLayers.empty() ? nullptr : instLayers.data();
-
-    VK_CHECK(vkCreateInstance(&ici, nullptr, &g_vulkan.instance));
-
-    // ---------
-    // Surface
-    // ---------
-    if (!SDL_Vulkan_CreateSurface(g_window, g_vulkan.instance, /*allocator*/nullptr, &g_vulkan.surface)) {
-        LOG_ERROR( "SDL_Vulkan_CreateSurface failed: %s", SDL_GetError());
-        return false;
-    }
-
-    // -----------------------------------------
-    // Pick physical device + queue (gfx+present)
-    // -----------------------------------------
+static bool pick_phisical_device(){
     uint32_t devCount = 0;
     VK_CHECK(vkEnumeratePhysicalDevices(g_vulkan.instance, &devCount, nullptr));
     if (devCount == 0) {
@@ -424,6 +323,112 @@ bool platform_init(uint32_t vulkan_version) {
     LOG("found physical device %s (gfx qf=%u, present qf=%u)",
            device_props.deviceName, g_vulkan.graphics_family, g_vulkan.present_family);
 
+    return true;
+
+}
+
+//INIT SHUTDOWN
+bool platform_init(uint32_t vulkan_version) {
+    if (g_window) return true; // already init
+
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        LOG_ERROR( "SDL_Init failed: %s", SDL_GetError());
+        return false;
+    }
+    
+    if (!SDL_Vulkan_LoadLibrary(nullptr)) {
+        LOG_ERROR( "SDL_Vulkan_LoadLibrary failed: %s", SDL_GetError());
+        return false;
+    }
+
+    // Get the primary display's desktop mode
+    SDL_DisplayID display = SDL_GetPrimaryDisplay();
+    if (display == 0) {
+        LOG_ERROR( "SDL_GetPrimaryDisplay failed: %s", SDL_GetError());
+        return false;
+    }
+
+    const SDL_DisplayMode* dm = SDL_GetDesktopDisplayMode(display);
+    if (!dm) {
+        LOG_ERROR( "SDL_GetDesktopDisplayMode failed: %s", SDL_GetError());
+        return false;
+    }
+
+    // Create a fullscreen Vulkan window at the desktop resolution
+    g_window = SDL_CreateWindow(
+        kWindowTitle,
+        dm->w, dm->h,
+        SDL_WINDOW_VULKAN | SDL_WINDOW_FULLSCREEN);
+    if (!g_window) {
+        LOG_ERROR( "SDL_CreateWindow failed: %s", SDL_GetError());
+        SDL_Quit();
+        return false;
+    }
+
+    window_w = dm->w;
+    window_h = dm->h;
+    LOG("Fullscreen desktop %dx%d", window_w, window_h);
+
+    // -------------------------
+    // Vulkan Instance (SDL3)
+    // -------------------------
+    Uint32 extCount = 0;
+    const char* const* sdlExts = SDL_Vulkan_GetInstanceExtensions(&extCount);
+    if (!sdlExts || extCount == 0) {
+        LOG_ERROR( "SDL_Vulkan_GetInstanceExtensions failed: %s", SDL_GetError());
+        return false;
+    }
+    std::vector<const char*> instExts(sdlExts, sdlExts + extCount); // copy into std::vector
+
+    // Optional validation layer (Debug only, if installed)
+    std::vector<const char*> instLayers;
+#ifndef NDEBUG
+    {
+        uint32_t availCount = 0;
+        VK_CHECK(vkEnumerateInstanceLayerProperties(&availCount, nullptr));
+        std::vector<VkLayerProperties> avail(availCount);
+        VK_CHECK(vkEnumerateInstanceLayerProperties(&availCount, avail.data()));
+        const char* kValidation = "VK_LAYER_KHRONOS_validation";
+        bool found = false;
+        for (const auto& lp : avail) {
+            if (std::strcmp(lp.layerName, kValidation) == 0) { found = true; break; }
+        }
+        if (found) instLayers.push_back(kValidation);
+        else LOG("Validation layer not present; continuing without it.");
+    }
+#endif
+
+    VkApplicationInfo app{};
+    app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app.pApplicationName = "mygame";
+    app.applicationVersion = VK_MAKE_VERSION(0,0,1);
+    app.pEngineName = "mygame";
+    app.engineVersion = VK_MAKE_VERSION(0,0,1);
+    app.apiVersion = vulkan_version;
+
+    VkInstanceCreateInfo ici{};
+    ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    ici.pApplicationInfo = &app;
+    ici.enabledExtensionCount = static_cast<uint32_t>(instExts.size());
+    ici.ppEnabledExtensionNames = instExts.data();
+    ici.enabledLayerCount = static_cast<uint32_t>(instLayers.size());
+    ici.ppEnabledLayerNames = instLayers.empty() ? nullptr : instLayers.data();
+
+    VK_CHECK(vkCreateInstance(&ici, nullptr, &g_vulkan.instance));
+
+    // ---------
+    // Surface
+    // ---------
+    if (!SDL_Vulkan_CreateSurface(g_window, g_vulkan.instance, /*allocator*/nullptr, &g_vulkan.surface)) {
+        LOG_ERROR( "SDL_Vulkan_CreateSurface failed: %s", SDL_GetError());
+        return false;
+    }
+
+    // -----------------------------------------
+    // Pick physical device + queue (gfx+present)
+    // -----------------------------------------
+    if (!pick_phisical_device())
+        return false;
 
 
     // -----------------------
