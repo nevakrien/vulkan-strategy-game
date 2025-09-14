@@ -4,6 +4,26 @@
 #include <cstring>
 #include <algorithm>
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+#include <glslang/build_info.h>
+#include <glslang/Public/ShaderLang.h>
+#include <spirv-tools/libspirv.h>
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+
+// GLOBALS
+SDL_Window* g_window = nullptr;
+int window_w = 0;
+int window_h = 0;
+
+VulkanGlobals g_vulkan;
+
+static const char* kWindowTitle = "Vulkan Strategy Game";
+
+FT_Library free_type;
 
 bool platform_should_quit() {
   SDL_Event e;
@@ -31,40 +51,52 @@ void print_libs() {
   SDL_Log("SDL version (compile-time): unknown");
 #endif
 
-  // FreeType init
-  FT_Library ft;
-  if (FT_Init_FreeType(&ft) == 0) {
-    SDL_Log("FreeType init: OK");
-    FT_Done_FreeType(ft);
-  } else {
-    SDL_Log("FreeType init: FAILED");
-  }
+  // FreeType
+  SDL_Log("[FreeType] headers: %d.%d.%d",
+            FREETYPE_MAJOR, FREETYPE_MINOR, FREETYPE_PATCH);
 
   // Vulkan loader version
-  uint32_t ver = 0;
-  if (vkEnumerateInstanceVersion(&ver) == VK_SUCCESS) {
-    SDL_Log("Vulkan loader present. Instance API version: %u.%u.%u",
-         VK_API_VERSION_MAJOR(ver),
-         VK_API_VERSION_MINOR(ver),
-         VK_API_VERSION_PATCH(ver));
-  } else {
-    SDL_Log("Vulkan loader not available or version query failed");
+  {
+    uint32_t ver = 0;
+    if (vkEnumerateInstanceVersion(&ver) == VK_SUCCESS) {
+      SDL_Log("Vulkan loader present. Instance API version: %u.%u.%u",
+           VK_API_VERSION_MAJOR(ver),
+           VK_API_VERSION_MINOR(ver),
+           VK_API_VERSION_PATCH(ver));
+    } else {
+      SDL_Log("Vulkan loader not available or version query failed");
+    }
+  }
+
+  //glsl
+  {
+    const char* opt_built =
+    #if defined(ENABLE_OPT) || defined(ENABLE_SPIRV_OPT)
+        "ON";
+    #else
+        "OFF";
+    #endif
+
+    #if defined(GLSLANG_VERSION_STRING)
+        SDL_Log("[glslang] version: %s, optimizer built: %s", GLSLANG_VERSION_STRING, opt_built);
+    #elif defined(GLSLANG_REVISION)
+        SDL_Log("[glslang] revision: %s, optimizer built: %s", GLSLANG_REVISION, opt_built);
+    #else
+        auto ver = glslang::GetVersion();
+        // New API; declared in ShaderLang.h in modern releases
+        SDL_Log("[glslang] version: %u.%u.%u-%s, optimizer built: %s",
+                ver.major,ver.minor,ver.patch,ver.flavor,
+                opt_built);
+    #endif
+
+    // If SPIRV-Tools headers are visible, print its version string too.
+    SDL_Log("[SPIRV-Tools] %s", spvSoftwareVersionString());
   }
 }
 
-// GLOBALS
-SDL_Window* g_window = nullptr;
-int window_w = 0;
-int window_h = 0;
 
-VulkanGlobals g_vulkan;
-
-static const char* kWindowTitle = "Vulkan Strategy Game";
 
 //INIT SHUTDOWN
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
-
 bool platform_init() {
     if (g_window) return true; // already init
 
@@ -379,6 +411,18 @@ bool platform_init() {
     SDL_Log("Swapchain: %ux%u, %u images, fmt=%d, present=%d",
             chosenExtent.width, chosenExtent.height, count,
             (int)chosenFormat.format, (int)chosenMode);
+
+
+    if (FT_Init_FreeType(&free_type) == 0) {
+      SDL_Log("FreeType init: OK");
+    } else {
+      SDL_Log("FreeType init: FAILED");
+      return false;
+    }
+
+    glslang::InitializeProcess();
+
+
 }
     return true;
 }
@@ -386,6 +430,7 @@ bool platform_init() {
 
 
 void platform_shutdown() {
+  if (!g_window) return;
   if (g_vulkan.device)     { vkDeviceWaitIdle(g_vulkan.device);}
   if (g_vulkan.swapchain != VK_NULL_HANDLE) {
       for (auto iv : g_vulkan.swapchain_image_views) if (iv) vkDestroyImageView(g_vulkan.device, iv, nullptr);
@@ -396,13 +441,17 @@ void platform_shutdown() {
       g_vulkan.swapchain_images.clear();
       g_vulkan.swapchain_format = VK_FORMAT_UNDEFINED;
       g_vulkan.swapchain_extent = {};
+
+      glslang::FinalizeProcess();
   }
 
   if (g_vulkan.device)     { vkDestroyDevice(g_vulkan.device, nullptr); g_vulkan.device = VK_NULL_HANDLE; }
   if (g_vulkan.surface)    { SDL_Vulkan_DestroySurface(g_vulkan.instance, g_vulkan.surface, nullptr); g_vulkan.surface = VK_NULL_HANDLE; }
   if (g_vulkan.instance)   { vkDestroyInstance(g_vulkan.instance, nullptr); g_vulkan.instance = VK_NULL_HANDLE; }
-  if (g_window)            { SDL_DestroyWindow(g_window); g_window = nullptr; }
-
+  
+  SDL_DestroyWindow(g_window); g_window = nullptr;
   SDL_Quit();
   SDL_Vulkan_UnloadLibrary();
+
+  FT_Done_FreeType(free_type); 
 }

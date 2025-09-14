@@ -2,14 +2,15 @@
 #define PLATFORM_HPP
 
 #include <vector>
-
-#include <ft2build.h>
-#include FT_FREETYPE_H
-
 #include <cstdio>
+#include <cstdlib>
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
+
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 // -----------------
 // Globals
@@ -45,6 +46,8 @@ struct VulkanGlobals {
 
 
 extern VulkanGlobals g_vulkan;
+
+extern FT_Library free_type;
 
 // -----------------
 // API
