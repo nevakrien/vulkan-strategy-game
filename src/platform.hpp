@@ -12,6 +12,17 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#define LOG_ERROR(format, ...) \
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, format, ##__VA_ARGS__)
+
+#ifndef NDEBUG
+#define LOG(format, ...) \
+    SDL_Log(format, ##__VA_ARGS__)
+#else
+#define LOG(format, ...) \
+    do { } while(0)
+#endif
+
 // -----------------
 // Globals
 // -----------------
@@ -56,7 +67,7 @@ void print_libs();
 
 // Initializes SDL (fullscreen desktop) and Vulkan (instance, surface, device,
 // swapchain, image views). Uses a constant window title.
-bool platform_init();
+bool platform_init(uint32_t vulkan_version = VK_API_VERSION_1_0);
 
 // Destroys all resources.
 void platform_shutdown();

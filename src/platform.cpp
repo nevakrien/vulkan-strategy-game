@@ -97,29 +97,29 @@ void print_libs() {
 
 
 //INIT SHUTDOWN
-bool platform_init() {
+bool platform_init(uint32_t vulkan_version) {
     if (g_window) return true; // already init
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_Init failed: %s", SDL_GetError());
+        LOG_ERROR( "SDL_Init failed: %s", SDL_GetError());
         return false;
     }
     
     if (!SDL_Vulkan_LoadLibrary(nullptr)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_Vulkan_LoadLibrary failed: %s", SDL_GetError());
+        LOG_ERROR( "SDL_Vulkan_LoadLibrary failed: %s", SDL_GetError());
         return false;
     }
 
     // Get the primary display's desktop mode
     SDL_DisplayID display = SDL_GetPrimaryDisplay();
     if (display == 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_GetPrimaryDisplay failed: %s", SDL_GetError());
+        LOG_ERROR( "SDL_GetPrimaryDisplay failed: %s", SDL_GetError());
         return false;
     }
 
     const SDL_DisplayMode* dm = SDL_GetDesktopDisplayMode(display);
     if (!dm) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_GetDesktopDisplayMode failed: %s", SDL_GetError());
+        LOG_ERROR( "SDL_GetDesktopDisplayMode failed: %s", SDL_GetError());
         return false;
     }
 
@@ -129,14 +129,14 @@ bool platform_init() {
         dm->w, dm->h,
         SDL_WINDOW_VULKAN | SDL_WINDOW_FULLSCREEN);
     if (!g_window) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_CreateWindow failed: %s", SDL_GetError());
+        LOG_ERROR( "SDL_CreateWindow failed: %s", SDL_GetError());
         SDL_Quit();
         return false;
     }
 
     window_w = dm->w;
     window_h = dm->h;
-    SDL_Log("Fullscreen desktop %dx%d", window_w, window_h);
+    LOG("Fullscreen desktop %dx%d", window_w, window_h);
 
     // -------------------------
     // Vulkan Instance (SDL3)
@@ -144,7 +144,7 @@ bool platform_init() {
     Uint32 extCount = 0;
     const char* const* sdlExts = SDL_Vulkan_GetInstanceExtensions(&extCount);
     if (!sdlExts || extCount == 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_Vulkan_GetInstanceExtensions failed: %s", SDL_GetError());
+        LOG_ERROR( "SDL_Vulkan_GetInstanceExtensions failed: %s", SDL_GetError());
         return false;
     }
     std::vector<const char*> instExts(sdlExts, sdlExts + extCount); // copy into std::vector
@@ -163,13 +163,21 @@ bool platform_init() {
             if (std::strcmp(lp.layerName, kValidation) == 0) { found = true; break; }
         }
         if (found) instLayers.push_back(kValidation);
-        else SDL_Log("Validation layer not present; continuing without it.");
+        else LOG("Validation layer not present; continuing without it.");
     }
 #endif
 
+    VkApplicationInfo app{};
+    app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app.pApplicationName = "mygame";
+    app.applicationVersion = VK_MAKE_VERSION(0,0,1);
+    app.pEngineName = "mygame";
+    app.engineVersion = VK_MAKE_VERSION(0,0,1);
+    app.apiVersion = vulkan_version;
+
     VkInstanceCreateInfo ici{};
     ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    ici.pApplicationInfo = nullptr;
+    ici.pApplicationInfo = &app;
     ici.enabledExtensionCount = static_cast<uint32_t>(instExts.size());
     ici.ppEnabledExtensionNames = instExts.data();
     ici.enabledLayerCount = static_cast<uint32_t>(instLayers.size());
@@ -181,7 +189,7 @@ bool platform_init() {
     // Surface
     // ---------
     if (!SDL_Vulkan_CreateSurface(g_window, g_vulkan.instance, /*allocator*/nullptr, &g_vulkan.surface)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_Vulkan_CreateSurface failed: %s", SDL_GetError());
+        LOG_ERROR( "SDL_Vulkan_CreateSurface failed: %s", SDL_GetError());
         return false;
     }
 
@@ -191,7 +199,7 @@ bool platform_init() {
     uint32_t devCount = 0;
     VK_CHECK(vkEnumeratePhysicalDevices(g_vulkan.instance, &devCount, nullptr));
     if (devCount == 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "No Vulkan-capable device found");
+        LOG_ERROR( "No Vulkan-capable device found");
         return false;
     }
     std::vector<VkPhysicalDevice> devs(devCount);
@@ -248,7 +256,7 @@ bool platform_init() {
     }
 
     if (g_vulkan.physical_device == VK_NULL_HANDLE) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+        LOG_ERROR(
             "No suitable device: need graphics+present families, %s, and a valid surface format/present mode",
             VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         return false;
@@ -256,7 +264,7 @@ bool platform_init() {
 
     VkPhysicalDeviceProperties device_props{};
     vkGetPhysicalDeviceProperties(g_vulkan.physical_device, &device_props);
-    SDL_Log("found physical device %s (gfx qf=%u, present qf=%u)",
+    LOG("found physical device %s (gfx qf=%u, present qf=%u)",
            device_props.deviceName, g_vulkan.graphics_family, g_vulkan.present_family);
 
 
@@ -298,7 +306,7 @@ bool platform_init() {
         g_vulkan.physical_device, g_vulkan.surface, &pmCount, nullptr));
 
     if (fmtCount == 0 || pmCount == 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+        LOG_ERROR(
             "Swapchain unsupported: formats=%u presentModes=%u", fmtCount, pmCount);
         std::exit(1);
     }
@@ -408,15 +416,15 @@ bool platform_init() {
         VK_CHECK(vkCreateImageView(g_vulkan.device, &info, nullptr, &g_vulkan.swapchain_image_views[i]));
     }
 
-    SDL_Log("Swapchain: %ux%u, %u images, fmt=%d, present=%d",
+    LOG("Swapchain: %ux%u, %u images, fmt=%d, present=%d",
             chosenExtent.width, chosenExtent.height, count,
             (int)chosenFormat.format, (int)chosenMode);
 
 
     if (FT_Init_FreeType(&free_type) == 0) {
-      SDL_Log("FreeType init: OK");
+      LOG("FreeType init: OK");
     } else {
-      SDL_Log("FreeType init: FAILED");
+      LOG("FreeType init: FAILED");
       return false;
     }
 

@@ -10,12 +10,14 @@
 #include <glslang/Public/ShaderLang.h>
 #include <glslang/Include/ResourceLimits.h>   // TBuiltInResource, DefaultTBuiltInResource (extern)
 #include <SPIRV/GlslangToSpv.h>               // GlslangToSpv, glslang::SpvOptions
+#include <vulkan/vulkan.h>
 
 namespace shader {
 
 struct CompileResult {
     bool ok = false;
     std::vector<uint32_t> spirv;
+    glslang::SpvOptions spv_opts;
     std::string log;
 };
 
@@ -59,5 +61,14 @@ VkShaderModule make_shader_module(VkDevice device, const std::vector<uint32_t>& 
 #endif
 
 } // namespace shader
+
+static inline int vk_client_number(glslang::EShTargetClientVersion v) {
+    switch (v) {
+        case glslang::EShTargetVulkan_1_1: return VK_API_VERSION_1_1;
+        case glslang::EShTargetVulkan_1_2: return VK_API_VERSION_1_2;
+        case glslang::EShTargetVulkan_1_3: return VK_API_VERSION_1_3;
+        default:                            return VK_API_VERSION_1_0;
+    }
+}
 
 #endif // MYGAME_SHADER_COMPILE_HPP

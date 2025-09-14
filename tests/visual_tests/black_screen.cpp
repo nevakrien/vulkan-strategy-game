@@ -5,7 +5,7 @@
 #include <cassert>
 #include "render.hpp"
 
-static int run_vulkan_smoke_test_clear_black()
+static int run_vulkan_black_screen_test()
 {
     RenderTargets    rt;
     CommandResources cmds;
@@ -67,7 +67,7 @@ int main() {
     if (!platform_init()) return 1;
     std::cout << "platform initialized\n";
 
-    const int rc = run_vulkan_smoke_test_clear_black();
+    const int rc = run_vulkan_black_screen_test();
 
     std::cout << "cleanup\n";
     platform_shutdown();
