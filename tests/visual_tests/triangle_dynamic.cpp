@@ -81,46 +81,44 @@ static VkShaderModule make_shader(VkDevice dev, EShLanguage stage, std::string_v
     return shader::make_shader_module(dev, res.spirv);
 }
 
-static VkPipeline make_pipeline(
-    VkDevice device, VkRenderPass rp,
-    VkShaderModule vs, VkShaderModule fs,
-    VkExtent2D extent,
-    VkPipelineLayout* outLayout)
+static VkPipeline make_pipeline(VkDevice device, VkRenderPass rp,
+                                VkShaderModule vs, VkShaderModule fs,
+                                VkPipelineLayout* outLayout)
 {
-    std::vector<VkPushConstantRange> ranges = {
+    std::vector<VkPushConstantRange>   ranges = {
         render::float_constant(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
     };
 
     auto plci = render::layout_info({}, ranges);
     VK_CHECK(vkCreatePipelineLayout(device, &plci, nullptr, outLayout));
 
-    // Stages
-    auto stg = render::fragment_vertex_stage_info(fs, vs);
+    auto stg = render::fragment_vertex_stage_info(fs,vs);
 
-    // Fixed (non-dynamic) viewport & scissor derived from swapchain extent
-    VkViewport vp{};
-    vp.x = 0.0f; vp.y = 0.0f;
-    vp.width  = float(extent.width);
-    vp.height = float(extent.height);
-    vp.minDepth = 0.0f; vp.maxDepth = 1.0f;
+    auto vi = render::vertex_input_info();
 
-    VkRect2D sc{};
-    sc.offset = {0, 0};
-    sc.extent = extent;
+    auto ia = render::input_assembly_info();
 
-    // Pipeline state blocks
-    auto vi   = render::vertex_input_info();
-    auto ia   = render::input_assembly_info();
-    auto vpst = render::viewport_state_info_static({&vp, 1}, {&sc, 1});  // <-- static
-    auto rs   = render::rasterization_state_info(VK_CULL_MODE_NONE);
-    auto ms   = render::multisample_state_info();
+    auto vpst = render::viewport_state_info_dynamic(1);
 
-    VkPipelineColorBlendAttachmentState cbAttrs[] = { render::no_blend };
-    auto cb   = render::color_blend_state(cbAttrs);
+    auto rs = render::rasterization_state_info(VK_CULL_MODE_NONE);
 
-    // No dynamic state:
+    auto ms = render::multisample_state_info();
+
+    VkPipelineColorBlendAttachmentState cbAttrs []= {render::no_blend};
+    auto cb = render::color_blend_state(cbAttrs);
+
+    VkDynamicState dynStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    auto dyn = render::dynamic_state_info(dynStates);
+
+    // VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    // gp.stageCount=stg.size(); gp.pStages=stg.data();
+    // gp.pVertexInputState=&vi; gp.pInputAssemblyState=&ia; gp.pViewportState=&vpst;
+    // gp.pRasterizationState=&rs; gp.pMultisampleState=&ms; gp.pDepthStencilState=nullptr; gp.pColorBlendState=&cb; gp.pDynamicState=&dyn;
+    // gp.layout=*outLayout; gp.renderPass=rp; gp.subpass=0;
+
+
     VkGraphicsPipelineCreateInfo gp = render::graphics_pipeline_info(
-        stg,
+        stg,            // std::span of VkPipelineShaderStageCreateInfo
         &vi,
         &ia,
         &vpst,
@@ -130,6 +128,7 @@ static VkPipeline make_pipeline(
         /*layout=*/*outLayout,
         /*render_pass=*/rp,
         /*subpass=*/0,
+        /*dynamic_state=*/&dyn
     );
 
     VkPipeline pipe = VK_NULL_HANDLE;
@@ -151,8 +150,7 @@ static int run_visual_triangle_with_opts(const shader::Options& opt) {
     VkShaderModule fs = make_shader(g_vulkan.device, EShLangFragment, kFS, "triangle.frag", opt);
 
     VkPipelineLayout pl = VK_NULL_HANDLE;
-    VkPipeline gp = make_pipeline(
-        g_vulkan.device, rt.render_pass, vs, fs, g_vulkan.swapchain_extent, &pl);
+    VkPipeline gp = make_pipeline(g_vulkan.device, rt.render_pass, vs, fs, &pl);
 
     const double t0 = SDL_GetTicks() / 1000.0;
     while (!platform_should_quit()) {
@@ -160,8 +158,7 @@ static int run_visual_triangle_with_opts(const shader::Options& opt) {
         VK_CHECK(vkResetFences(g_vulkan.device, 1, &sync.in_flight_fence));
 
         uint32_t image_index = 0;
-        VkResult acq = vkAcquireNextImageKHR(
-            g_vulkan.device, g_vulkan.swapchain, UINT64_MAX, sync.image_available, VK_NULL_HANDLE, &image_index);
+        VkResult acq = vkAcquireNextImageKHR(g_vulkan.device, g_vulkan.swapchain, UINT64_MAX, sync.image_available, VK_NULL_HANDLE, &image_index);
         if (acq == VK_ERROR_OUT_OF_DATE_KHR) break;
         VK_CHECK(acq);
 
@@ -175,20 +172,22 @@ static int run_visual_triangle_with_opts(const shader::Options& opt) {
 
         VkClearValue clear; clear.color = {{0.02f,0.02f,0.02f,1.0f}};
         VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-        rpbi.renderPass = rt.render_pass;
-        rpbi.framebuffer = rt.framebuffers[image_index];
-        rpbi.renderArea.offset = {0,0};
-        rpbi.renderArea.extent = g_vulkan.swapchain_extent;
-        rpbi.clearValueCount = 1;
-        rpbi.pClearValues = &clear;
+        rpbi.renderPass = rt.render_pass; rpbi.framebuffer = rt.framebuffers[image_index];
+        rpbi.renderArea.offset = {0,0}; rpbi.renderArea.extent = g_vulkan.swapchain_extent;
+        rpbi.clearValueCount = 1; rpbi.pClearValues = &clear;
         vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
 
+        VkViewport vp{}; vp.x=0; vp.y=0;
+        vp.width=float(g_vulkan.swapchain_extent.width);
+        vp.height=float(g_vulkan.swapchain_extent.height);
+        vp.minDepth=0; vp.maxDepth=1;
+
+        VkRect2D sc{}; sc.offset={0,0}; sc.extent=g_vulkan.swapchain_extent;
+
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, gp);
-
-        // No vkCmdSetViewport / vkCmdSetScissor — they’re baked into the pipeline.
-
-        vkCmdPushConstants(cb, pl, VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(float), &t);
+        vkCmdSetViewport(cb, 0, 1, &vp);
+        vkCmdSetScissor (cb, 0, 1, &sc);
+        vkCmdPushConstants(cb, pl, VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float), &t);
         vkCmdDraw(cb, 3, 1, 0, 0);
 
         vkCmdEndRenderPass(cb);
