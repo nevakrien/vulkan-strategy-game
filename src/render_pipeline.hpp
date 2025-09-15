@@ -386,6 +386,25 @@ inline VkGraphicsPipelineCreateInfo graphics_pipeline_info(
     return info;
 }
 
+inline VkRenderPassBeginInfo render_pass_begin_info(
+    VkRenderPass render_pass,
+    VkFramebuffer framebuffer,
+    VkExtent2D extent,
+    std::span<const VkClearValue> clears,
+    VkOffset2D offset = {0, 0}
+) {
+    VkRenderPassBeginInfo info{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    info.renderPass = render_pass;
+    info.framebuffer = framebuffer;
+    info.renderArea.offset = offset;
+    info.renderArea.extent = extent;
+    info.clearValueCount   = static_cast<uint32_t>(clears.size());
+    info.pClearValues      = clears.data();
+    return info;
+}
+
+
+
 } // namespace render
 
 #endif //RENDER_PIPELINE_HPP

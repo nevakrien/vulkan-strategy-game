@@ -129,7 +129,7 @@ static VkPipeline make_pipeline(
         &cb,
         /*layout=*/*outLayout,
         /*render_pass=*/rp,
-        /*subpass=*/0,
+        /*subpass=*/0
     );
 
     VkPipeline pipe = VK_NULL_HANDLE;
@@ -174,13 +174,13 @@ static int run_visual_triangle_with_opts(const shader::Options& opt) {
         VK_CHECK(vkBeginCommandBuffer(cb, &bi));
 
         VkClearValue clear; clear.color = {{0.02f,0.02f,0.02f,1.0f}};
-        VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-        rpbi.renderPass = rt.render_pass;
-        rpbi.framebuffer = rt.framebuffers[image_index];
-        rpbi.renderArea.offset = {0,0};
-        rpbi.renderArea.extent = g_vulkan.swapchain_extent;
-        rpbi.clearValueCount = 1;
-        rpbi.pClearValues = &clear;
+        VkClearValue clears[1]={}; clears[0].color = {{0.02f,0.02f,0.02f,1.0f}};
+        auto rpbi = render::render_pass_begin_info(
+            rt.render_pass,
+            rt.framebuffers[image_index],
+            g_vulkan.swapchain_extent,
+            clears
+        );
         vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
 
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, gp);
