@@ -386,6 +386,86 @@ inline VkGraphicsPipelineCreateInfo graphics_pipeline_info(
     return info;
 }
 
+inline VkResult create_graphics_pipeline(
+    VkPipeline& outPipe,
+    VkDevice device,
+    std::span<const VkPipelineShaderStageCreateInfo> stages,
+    const VkPipelineViewportStateCreateInfo* viewport_state,
+    VkPipelineLayout layout,
+    VkRenderPass render_pass,
+
+    // VALUE OPTIONALS (defaults via your constexpr helpers)
+    VkPipelineRasterizationStateCreateInfo raster_state     = render::rasterization_state_info(),
+    VkPipelineColorBlendStateCreateInfo    color_blend_state= render::color_blend_state({&render::alpha_blend, 1}),
+    VkPipelineVertexInputStateCreateInfo   vertex_input     = render::vertex_input_info(),
+    VkPipelineInputAssemblyStateCreateInfo input_assembly   = render::input_assembly_info(),
+    VkPipelineMultisampleStateCreateInfo   multisample_state= render::multisample_state_info(),
+
+    // COMMON OPTIONALS (often null)
+    uint32_t subpass = 0,
+    const VkPipelineDynamicStateCreateInfo*      dynamic_state = nullptr,
+    const VkPipelineDepthStencilStateCreateInfo* depth_stencil = nullptr,
+
+    // RARER OPTIONALS
+    const VkPipelineTessellationStateCreateInfo* tessellation  = nullptr,
+    VkPipelineCreateFlags flags = 0,
+    VkPipeline base_handle = VK_NULL_HANDLE,
+    int32_t   base_index  = -1
+) {
+    if (!viewport_state) return VK_ERROR_INITIALIZATION_FAILED; // required
+
+    // Build the top-level create-info (addresses of by-value args are valid for the call)
+    auto gp = render::graphics_pipeline_info(
+        stages,
+        &vertex_input,
+        &input_assembly,
+        viewport_state,
+        &raster_state,
+        &multisample_state,
+        &color_blend_state,
+        layout,
+        render_pass,
+        subpass,
+        dynamic_state,
+        depth_stencil,
+        tessellation,
+        flags,
+        base_handle,
+        base_index
+    );
+
+    return vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gp, nullptr, &outPipe);
+}
+
+inline VkResult create_graphics_pipeline_basic(
+    VkPipeline& outPipe,
+    VkDevice device,
+    std::span<const VkPipelineShaderStageCreateInfo> stages,
+    const VkPipelineViewportStateCreateInfo* viewport_state,
+    VkPipelineLayout layout,
+    VkRenderPass render_pass,
+    VkCullModeFlags cull = VK_CULL_MODE_BACK_BIT,
+    const VkPipelineColorBlendAttachmentState& blend = render::alpha_blend,
+    uint32_t subpass = 0,
+    const VkPipelineDynamicStateCreateInfo* dynamic_state = nullptr
+) {
+    // value blocks
+    auto raster_state      = render::rasterization_state_info(cull);
+    auto vertex_input      = render::vertex_input_info();
+    auto input_assembly    = render::input_assembly_info();
+    auto multisample_state = render::multisample_state_info();
+
+    // make a color-blend state from a single attachment
+    VkPipelineColorBlendAttachmentState att[1] = { blend };
+    auto color_blend_state = render::color_blend_state(att);
+
+    return create_graphics_pipeline(
+        outPipe, device, stages, viewport_state, layout, render_pass,
+        raster_state, color_blend_state, vertex_input, input_assembly, multisample_state,
+        subpass, dynamic_state
+    );
+}
+
 inline VkRenderPassBeginInfo render_pass_begin_info(
     VkRenderPass render_pass,
     VkFramebuffer framebuffer,

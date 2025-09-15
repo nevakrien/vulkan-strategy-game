@@ -73,67 +73,12 @@ static glslang::EShTargetLanguageVersion clamp_spv(glslang::EShTargetClientVersi
     return spv;
 }
 
-// --- Pipeline helpers --------------------------------------------------------
+// --- Pipeline helper --------------------------------------------------------
 static VkShaderModule make_shader(VkDevice dev, EShLanguage stage, std::string_view src,
                                   const char* dbg, const shader::Options& opt) {
     auto res = shader::compile_glsl_to_spirv(stage, src, opt, dbg);
     if (!res.ok) { std::fprintf(stderr, "Shader compile failed for %s:\n%s\n", dbg, res.log.c_str()); std::abort(); }
     return shader::make_shader_module(dev, res.spirv);
-}
-
-static VkPipeline make_pipeline(VkDevice device, VkRenderPass rp,
-                                VkShaderModule vs, VkShaderModule fs,
-                                VkPipelineLayout* outLayout)
-{
-    std::vector<VkPushConstantRange>   ranges = {
-        render::float_constant(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
-    };
-
-    auto plci = render::layout_info({}, ranges);
-    VK_CHECK(vkCreatePipelineLayout(device, &plci, nullptr, outLayout));
-
-    auto stg = render::fragment_vertex_stage_info(fs,vs);
-
-    auto vi = render::vertex_input_info();
-
-    auto ia = render::input_assembly_info();
-
-    auto vpst = render::viewport_state_info_dynamic(1);
-
-    auto rs = render::rasterization_state_info(VK_CULL_MODE_NONE);
-
-    auto ms = render::multisample_state_info();
-
-    VkPipelineColorBlendAttachmentState cbAttrs []= {render::no_blend};
-    auto cb = render::color_blend_state(cbAttrs);
-
-    VkDynamicState dynStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-    auto dyn = render::dynamic_state_info(dynStates);
-
-    // VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    // gp.stageCount=stg.size(); gp.pStages=stg.data();
-    // gp.pVertexInputState=&vi; gp.pInputAssemblyState=&ia; gp.pViewportState=&vpst;
-    // gp.pRasterizationState=&rs; gp.pMultisampleState=&ms; gp.pDepthStencilState=nullptr; gp.pColorBlendState=&cb; gp.pDynamicState=&dyn;
-    // gp.layout=*outLayout; gp.renderPass=rp; gp.subpass=0;
-
-
-    VkGraphicsPipelineCreateInfo gp = render::graphics_pipeline_info(
-        stg,            // std::span of VkPipelineShaderStageCreateInfo
-        &vi,
-        &ia,
-        &vpst,
-        &rs,
-        &ms,
-        &cb,
-        /*layout=*/*outLayout,
-        /*render_pass=*/rp,
-        /*subpass=*/0,
-        /*dynamic_state=*/&dyn
-    );
-
-    VkPipeline pipe = VK_NULL_HANDLE;
-    VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gp, nullptr, &pipe));
-    return pipe;
 }
 
 // --- Run test ----------------------------------------------------------------
@@ -146,11 +91,40 @@ static int run_visual_triangle_with_opts(const shader::Options& opt) {
     cmds.init(g_vulkan.device, g_vulkan.graphics_family, static_cast<uint32_t>(rt.framebuffers.size()));
     sync.init(g_vulkan.device);
 
+    // compile shaders
     VkShaderModule vs = make_shader(g_vulkan.device, EShLangVertex,   kVS, "triangle.vert", opt);
     VkShaderModule fs = make_shader(g_vulkan.device, EShLangFragment, kFS, "triangle.frag", opt);
 
+    // pipeline layout (push-constant: float t)
+    std::vector<VkPushConstantRange> ranges = {
+        render::float_constant(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+    };
+    auto plci = render::layout_info({}, ranges);
     VkPipelineLayout pl = VK_NULL_HANDLE;
-    VkPipeline gp = make_pipeline(g_vulkan.device, rt.render_pass, vs, fs, &pl);
+    VK_CHECK(vkCreatePipelineLayout(g_vulkan.device, &plci, nullptr, &pl));
+
+    // dynamic viewport/scissor
+    auto vpst = render::viewport_state_info_dynamic(1);
+    VkDynamicState dynStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    auto dyn = render::dynamic_state_info(dynStates);
+
+    // shader stages
+    auto stages = render::fragment_vertex_stage_info(fs, vs);
+
+    // create pipeline via the new helper in `render`
+    VkPipeline gp = VK_NULL_HANDLE;
+    VK_CHECK(render::create_graphics_pipeline_basic(
+        /*outPipe=*/gp,
+        /*device=*/g_vulkan.device,
+        /*stages=*/stages,
+        /*viewport_state=*/&vpst,
+        /*layout=*/pl,
+        /*render_pass=*/rt.render_pass,
+        /*cull=*/VK_CULL_MODE_NONE,     // keep old behavior; omit to use 3D defaults
+        /*blend=*/render::no_blend,     // keep old behavior; omit to use alpha blend
+        /*subpass=*/0,
+        /*dynamic_state=*/&dyn
+    ));
 
     const double t0 = SDL_GetTicks() / 1000.0;
     while (!platform_should_quit()) {
