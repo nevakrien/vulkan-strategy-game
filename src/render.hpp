@@ -23,6 +23,37 @@ struct RenderTargets {
     bool valid() const { return render_pass != VK_NULL_HANDLE; }
 };
 
+struct CommandResources {
+    VkCommandPool                pool    = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> buffers;
+
+    void init(
+        VkDevice device,
+        uint32_t queueFamilyIndex,
+        uint32_t count,
+        VkCommandPoolCreateFlags poolFlags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        VkCommandBufferLevel level         = VK_COMMAND_BUFFER_LEVEL_PRIMARY
+    );
+
+    void shutdown(VkDevice device);
+    bool valid() const { return pool != VK_NULL_HANDLE; }
+
+    void record_clear_one(
+        size_t index,
+        const RenderTargets& rt,
+        VkExtent2D extent,
+        const VkClearColorValue& color,
+        VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
+    );
+
+    void record_clear_all(
+        const RenderTargets& rt,
+        VkExtent2D extent,
+        const VkClearColorValue& color,
+        VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
+    );
+};
+
 struct FrameSync {
     VkSemaphore image_available = VK_NULL_HANDLE;
     VkSemaphore render_finished = VK_NULL_HANDLE;
@@ -44,49 +75,16 @@ struct FrameSync {
         VkSwapchainKHR swapchain,
         uint32_t imageIndex
     ) const;
-};
-
-struct CommandResources {
-    VkCommandPool                pool    = VK_NULL_HANDLE;
-    std::vector<VkCommandBuffer> buffers;
-
-    void init(
-        VkDevice device,
-        uint32_t queueFamilyIndex,
-        uint32_t count,
-        VkCommandPoolCreateFlags poolFlags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        VkCommandBufferLevel level         = VK_COMMAND_BUFFER_LEVEL_PRIMARY
-    );
-
-    void shutdown(VkDevice device);
-    bool valid() const { return pool != VK_NULL_HANDLE; }
-
 
     // Submit this->buffers[imageIndex] with the standard “imageAvailable -> draw -> renderFinished” chain.
-    // If fence == VK_NULL_HANDLE, uses sync.in_flight_fence by default.
-    // Returns the VkPipelineStageFlags used (useful if caller wants it later).
-    VkPipelineStageFlags submit_one(
+    // If fence == VK_NULL_HANDLE, uses in_flight_fence by default.
+    VkResult submit_one(
         VkQueue queue,
         uint32_t imageIndex,
-        const FrameSync& sync,
+        const CommandResources& cmd,
         VkPipelineStageFlags waitDstStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         VkFence fence = VK_NULL_HANDLE
     ) const;
-
-    void record_clear_one(
-        size_t index,
-        const RenderTargets& rt,
-        VkExtent2D extent,
-        const VkClearColorValue& color,
-        VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
-    );
-
-    void record_clear_all(
-        const RenderTargets& rt,
-        VkExtent2D extent,
-        const VkClearColorValue& color,
-        VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
-    );
 };
 
 #endif // RENDER_HPP

@@ -173,7 +173,7 @@ static int run_visual_triangle_with_opts(const shader::Options& opt) {
         vkCmdEndRenderPass(cb);
         VK_CHECK(vkEndCommandBuffer(cb));
 
-        cmds.submit_one(g_vulkan.graphics_queue, image_index, sync);
+        VK_CHECK(sync.submit_one(g_vulkan.graphics_queue, image_index, cmds));
         VkResult pres = sync.present_one(g_vulkan.present_queue, g_vulkan.swapchain, image_index);
         if (pres == VK_ERROR_OUT_OF_DATE_KHR || pres == VK_SUBOPTIMAL_KHR) break;
         VK_CHECK(pres);

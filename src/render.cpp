@@ -164,6 +164,54 @@ void FrameSync::shutdown(VkDevice device) {
 }
 
 
+//----------rendering------------------------
+VkResult FrameSync::submit_one(
+        VkQueue queue,
+        uint32_t imageIndex,
+        const CommandResources& cmd,
+        VkPipelineStageFlags waitDstStage,
+        VkFence fence
+) const{
+    DEBUG_ASSERT(imageIndex < cmd.buffers.size());
+    DEBUG_ASSERT(image_available != VK_NULL_HANDLE);
+    DEBUG_ASSERT(render_finished != VK_NULL_HANDLE);
+
+    if (fence == VK_NULL_HANDLE) {
+        fence = in_flight_fence;
+    }
+
+    VkPipelineStageFlags stageMask = waitDstStage; // must outlive submit struct
+
+    VkSubmitInfo submit{};
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.waitSemaphoreCount   = 1;
+    submit.pWaitSemaphores      = &image_available;
+    submit.pWaitDstStageMask    = &stageMask;
+    submit.commandBufferCount   = 1;
+    submit.pCommandBuffers      = &cmd.buffers[imageIndex];
+    submit.signalSemaphoreCount = 1;
+    submit.pSignalSemaphores    = &render_finished;
+
+    return vkQueueSubmit(queue, 1, &submit, fence);
+}
+VkResult FrameSync::present_one(
+    VkQueue presentQueue,
+    VkSwapchainKHR swapchain,
+    uint32_t imageIndex
+) const {
+    DEBUG_ASSERT(render_finished != VK_NULL_HANDLE);
+
+    VkPresentInfoKHR present{};
+    present.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present.waitSemaphoreCount = 1;
+    present.pWaitSemaphores    = &render_finished;
+    present.swapchainCount     = 1;
+    present.pSwapchains        = &swapchain;
+    present.pImageIndices      = &imageIndex;
+
+    return vkQueuePresentKHR(presentQueue, &present);
+}
+
 // -----------comands------------------
 void CommandResources::record_clear_one(
     size_t index,
@@ -210,54 +258,4 @@ void CommandResources::record_clear_all(
     for (size_t i = 0; i < buffers.size(); ++i) {
         record_clear_one(i, rt, extent, color, usage);
     }
-}
-
-VkPipelineStageFlags CommandResources::submit_one(
-    VkQueue queue,
-    uint32_t imageIndex,
-    const FrameSync& sync,
-    VkPipelineStageFlags waitDstStage,
-    VkFence fence
-) const {
-    DEBUG_ASSERT(imageIndex < buffers.size());
-    DEBUG_ASSERT(sync.image_available != VK_NULL_HANDLE);
-    DEBUG_ASSERT(sync.render_finished != VK_NULL_HANDLE);
-
-    if (fence == VK_NULL_HANDLE) {
-        fence = sync.in_flight_fence;
-    }
-
-    VkPipelineStageFlags stageMask = waitDstStage; // must outlive submit struct
-
-    VkSubmitInfo submit{};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit.waitSemaphoreCount   = 1;
-    submit.pWaitSemaphores      = &sync.image_available;
-    submit.pWaitDstStageMask    = &stageMask;
-    submit.commandBufferCount   = 1;
-    submit.pCommandBuffers      = &buffers[imageIndex];
-    submit.signalSemaphoreCount = 1;
-    submit.pSignalSemaphores    = &sync.render_finished;
-
-    VK_CHECK(vkQueueSubmit(queue, 1, &submit, fence));
-    return stageMask;
-}
-
-//----------sync------------------------
-VkResult FrameSync::present_one(
-    VkQueue presentQueue,
-    VkSwapchainKHR swapchain,
-    uint32_t imageIndex
-) const {
-    DEBUG_ASSERT(render_finished != VK_NULL_HANDLE);
-
-    VkPresentInfoKHR present{};
-    present.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present.waitSemaphoreCount = 1;
-    present.pWaitSemaphores    = &render_finished;
-    present.swapchainCount     = 1;
-    present.pSwapchains        = &swapchain;
-    present.pImageIndices      = &imageIndex;
-
-    return vkQueuePresentKHR(presentQueue, &present);
 }
