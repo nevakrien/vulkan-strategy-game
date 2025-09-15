@@ -1,10 +1,11 @@
-#ifndef MYGAME_SHADER_COMPILE_HPP
-#define MYGAME_SHADER_COMPILE_HPP
+#ifndef SHADER_COMPILE_HPP
+#define SHADER_COMPILE_HPP
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
+#include <span>
 
 // glslang
 #include <glslang/Public/ShaderLang.h>
@@ -55,10 +56,7 @@ CompileResult compile_glsl_to_spirv(EShLanguage stage,
                                     std::string_view debugName = "shader.glsl");
 
 
-// If the includer has already included Vulkan (normal headers), expose the helper:
-#if defined(VK_VERSION_1_0) || defined(VULKAN_H_) || defined(VK_CORE_H_)
-VkShaderModule make_shader_module(VkDevice device, const std::vector<uint32_t>& words);
-#endif
+VkShaderModule make_shader_module(VkDevice device, std::span<const uint32_t> words);
 
 } // namespace shader
 
@@ -73,4 +71,4 @@ static inline int vk_client_convert(glslang::EShTargetClientVersion v) {
 
 
 
-#endif // MYGAME_SHADER_COMPILE_HPP
+#endif // SHADER_COMPILE_HPP

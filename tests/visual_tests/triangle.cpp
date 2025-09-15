@@ -6,6 +6,7 @@
 #include <optional>
 #include "render.hpp"
 #include "shader_compile.hpp"
+#include "render_pipeline.hpp"
 
 #ifndef VK_CHECK
 #define VK_CHECK(x) do { VkResult _r = (x); if (_r) { \
@@ -89,47 +90,51 @@ static VkPipeline make_pipeline(VkDevice device, VkRenderPass rp,
                                 VkShaderModule vs, VkShaderModule fs,
                                 VkPipelineLayout* outLayout)
 {
-    VkPushConstantRange pc{};
-    pc.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    pc.offset = 0; pc.size = sizeof(float);
+    std::vector<VkPushConstantRange>   ranges = {
+        render::float_constant(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+    };
 
-    VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    plci.pushConstantRangeCount = 1; plci.pPushConstantRanges = &pc;
+    auto plci = render::layout_info({}, ranges);
     VK_CHECK(vkCreatePipelineLayout(device, &plci, nullptr, outLayout));
 
-    VkPipelineShaderStageCreateInfo stg[2]{};
-    stg[0].sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO; stg[0].stage=VK_SHADER_STAGE_VERTEX_BIT;   stg[0].module=vs; stg[0].pName="main";
-    stg[1].sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO; stg[1].stage=VK_SHADER_STAGE_FRAGMENT_BIT; stg[1].module=fs; stg[1].pName="main";
+    auto stg = render::fragment_vertex_stage_info(fs,vs);
 
-    VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    auto vi = render::vertex_input_info();
 
-    VkPipelineViewportStateCreateInfo vpst{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-    vpst.viewportCount = 1; vpst.scissorCount = 1;
+    auto ia = render::input_assembly_info();
 
-    VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-    rs.polygonMode = VK_POLYGON_MODE_FILL; rs.cullMode = VK_CULL_MODE_NONE;
-    rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; rs.lineWidth = 1.0f;
+    auto vpst = render::viewport_state_info_dynamic(1);
 
-    VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    auto rs = render::rasterization_state_info(VK_CULL_MODE_NONE);
 
-    VkPipelineColorBlendAttachmentState cbAtt{};
-    cbAtt.colorWriteMask = VK_COLOR_COMPONENT_R_BIT|VK_COLOR_COMPONENT_G_BIT|
-                           VK_COLOR_COMPONENT_B_BIT|VK_COLOR_COMPONENT_A_BIT;
-    VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-    cb.attachmentCount = 1; cb.pAttachments = &cbAtt;
+    auto ms = render::multisample_state_info();
+
+    VkPipelineColorBlendAttachmentState cbAttrs []= {render::no_blend};
+    auto cb = render::color_blend_state(cbAttrs);
 
     VkDynamicState dynStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-    VkPipelineDynamicStateCreateInfo dyn{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-    dyn.dynamicStateCount = 2; dyn.pDynamicStates = dynStates;
+    auto dyn = render::dynamic_state_info(dynStates);
 
-    VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    gp.stageCount=2; gp.pStages=stg;
-    gp.pVertexInputState=&vi; gp.pInputAssemblyState=&ia; gp.pViewportState=&vpst;
-    gp.pRasterizationState=&rs; gp.pMultisampleState=&ms; gp.pDepthStencilState=nullptr; gp.pColorBlendState=&cb; gp.pDynamicState=&dyn;
-    gp.layout=*outLayout; gp.renderPass=rp; gp.subpass=0;
+    // VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    // gp.stageCount=stg.size(); gp.pStages=stg.data();
+    // gp.pVertexInputState=&vi; gp.pInputAssemblyState=&ia; gp.pViewportState=&vpst;
+    // gp.pRasterizationState=&rs; gp.pMultisampleState=&ms; gp.pDepthStencilState=nullptr; gp.pColorBlendState=&cb; gp.pDynamicState=&dyn;
+    // gp.layout=*outLayout; gp.renderPass=rp; gp.subpass=0;
+
+
+    VkGraphicsPipelineCreateInfo gp = render::graphics_pipeline_info(
+        stg,            // std::span of VkPipelineShaderStageCreateInfo
+        &vi,
+        &ia,
+        &vpst,
+        &rs,
+        &ms,
+        &cb,
+        /*layout=*/*outLayout,
+        /*render_pass=*/rp,
+        /*subpass=*/0,
+        /*dynamic_state=*/&dyn
+    );
 
     VkPipeline pipe = VK_NULL_HANDLE;
     VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gp, nullptr, &pipe));

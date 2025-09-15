@@ -105,6 +105,8 @@ void print_libs() {
   }
 }
 
+//INIT SHUTDOWN
+
 static bool pick_phisical_device(){
     uint32_t devCount = 0;
     VK_CHECK(vkEnumeratePhysicalDevices(g_vulkan.instance, &devCount, nullptr));
@@ -327,7 +329,6 @@ static bool pick_phisical_device(){
 
 }
 
-//INIT SHUTDOWN
 bool platform_init(uint32_t vulkan_version) {
     if (g_window) return true; // already init
 

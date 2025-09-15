@@ -1,5 +1,5 @@
 #include "render.hpp"
-#include <cassert>
+#include "common.hpp"
 
 static void build_color_only_renderpass_and_fbos(
     VkDevice device,
@@ -172,8 +172,8 @@ void CommandResources::record_clear_one(
     const VkClearColorValue& color,
     VkCommandBufferUsageFlags usage
 ) {
-    assert(index < buffers.size());
-    assert(index < rt.framebuffers.size());
+    DEBUG_ASSERT(index < buffers.size());
+    DEBUG_ASSERT(index < rt.framebuffers.size());
 
     VkCommandBuffer cb = buffers[index];
 
@@ -206,7 +206,7 @@ void CommandResources::record_clear_all(
     const VkClearColorValue& color,
     VkCommandBufferUsageFlags usage
 ) {
-    assert(buffers.size() == rt.framebuffers.size());
+    DEBUG_ASSERT(buffers.size() == rt.framebuffers.size());
     for (size_t i = 0; i < buffers.size(); ++i) {
         record_clear_one(i, rt, extent, color, usage);
     }
@@ -219,9 +219,9 @@ VkPipelineStageFlags CommandResources::submit_one(
     VkPipelineStageFlags waitDstStage,
     VkFence fence
 ) const {
-    assert(imageIndex < buffers.size());
-    assert(sync.image_available != VK_NULL_HANDLE);
-    assert(sync.render_finished != VK_NULL_HANDLE);
+    DEBUG_ASSERT(imageIndex < buffers.size());
+    DEBUG_ASSERT(sync.image_available != VK_NULL_HANDLE);
+    DEBUG_ASSERT(sync.render_finished != VK_NULL_HANDLE);
 
     if (fence == VK_NULL_HANDLE) {
         fence = sync.in_flight_fence;
@@ -249,7 +249,7 @@ VkResult FrameSync::present_one(
     VkSwapchainKHR swapchain,
     uint32_t imageIndex
 ) const {
-    assert(render_finished != VK_NULL_HANDLE);
+    DEBUG_ASSERT(render_finished != VK_NULL_HANDLE);
 
     VkPresentInfoKHR present{};
     present.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;

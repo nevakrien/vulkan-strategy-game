@@ -183,8 +183,7 @@ CompileResult compile_glsl_to_spirv(EShLanguage stage,
     return r;
 }
 
-#if defined(VK_VERSION_1_0) || defined(VULKAN_H_) || defined(VK_CORE_H_)
-VkShaderModule make_shader_module(VkDevice device, const std::vector<uint32_t>& words) {
+VkShaderModule make_shader_module(VkDevice device, std::span<const uint32_t> words) {
     VkShaderModuleCreateInfo ci{};
     ci.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     ci.codeSize = words.size() * sizeof(uint32_t);
@@ -194,6 +193,5 @@ VkShaderModule make_shader_module(VkDevice device, const std::vector<uint32_t>& 
     VK_CHECK(vkCreateShaderModule(device, &ci, nullptr, &mod));
     return mod;
 }
-#endif
 
 } // namespace shader
