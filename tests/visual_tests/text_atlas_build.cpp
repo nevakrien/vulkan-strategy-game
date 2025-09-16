@@ -73,8 +73,9 @@ int main(int argc, char** argv) {
     }
 
     // 2) Build the atlas (CPU -> GPU)
-    TextFormatCaps caps{};
-    if (!pick_text_caps(g_vulkan.physical_device, caps)) {
+    VkFormat format;
+    VkFilter filter;
+    if (!pick_text_format_and_filter(g_vulkan.physical_device, format,filter)) {
         std::fprintf(stderr, "[text_atlas_hello] No suitable format\n");
         platform_shutdown();
         return 1;
@@ -93,11 +94,11 @@ int main(int argc, char** argv) {
     FontAtlasGPU gpu{};
     VK_CHECK(build_font_atlas_gpu(g_vulkan.device, g_vulkan.physical_device,
                                   g_vulkan.graphics_queue, g_vulkan.graphics_family,
-                                  caps.format,
+                                  format,
                                   cpu, gpu));
 
     VkSampler sampler = VK_NULL_HANDLE;
-    VK_CHECK(build_text_sampler(&sampler,caps.filter,g_vulkan.device));
+    VK_CHECK(build_text_sampler(&sampler,filter,g_vulkan.device));
 
     // 3) Render targets + command buffers + sync
     RenderTargets   rt;

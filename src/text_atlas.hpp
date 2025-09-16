@@ -35,6 +35,7 @@ struct FontAtlasGPU {
 bool build_cpu_font_atlas(FT_Library ft, const char* font_path,
                           uint32_t pixel_height,
                           FontAtlasCPU& out,
+                          int pad = 1,
                           const std::vector<uint32_t>& codepoints = {});
 
 // Build a complete GPU atlas (image+view+sampler(if not present)) and upload pixels internally.

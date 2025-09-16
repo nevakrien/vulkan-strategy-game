@@ -73,6 +73,7 @@ static void classic_layout_transition(VkCommandBuffer cb, VkImage img,
 bool build_cpu_font_atlas(FT_Library ft, const char* font_path,
                           uint32_t pixel_height,
                           FontAtlasCPU& out,
+                          int pad,
                           const std::vector<uint32_t>& codepoints)
 {
     FT_Face face = nullptr;
@@ -124,7 +125,6 @@ bool build_cpu_font_atlas(FT_Library ft, const char* font_path,
     const uint32_t estSide = next_pow2(uint32_t(std::ceil(std::sqrt(double(targetArea)))));
     const uint32_t atlasW  = std::clamp(estSide, 256u, 2048u);
 
-    const int pad = 1;
     int penX=pad, penY=pad, rowH=0;
     for (auto& t : glyphs) {
         if (penX + t.w + pad > int(atlasW)) { penX = pad; penY += rowH + pad; rowH = 0; }
