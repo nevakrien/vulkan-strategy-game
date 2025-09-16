@@ -103,7 +103,7 @@ static const char* vk_result_str(VkResult r) {
 static inline void vk_check(VkResult r, const char* expr, const char* file, int line) {
   if (r != VK_SUCCESS) {
     SDL_Log("Vulkan call failed: %s -> %s (%d) at %s:%d", expr, vk_result_str(r), (int)r, file, line);
-    std::abort();
+    exit(1);
   }
 }
 
