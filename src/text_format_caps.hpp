@@ -32,6 +32,7 @@ inline bool pick_text_caps(VkPhysicalDevice phys, TextFormatCaps& out) {
     for (VkFormat f : cands) {
         if (!_txt_supports_img(phys, f)) continue;
         out.format = f;
+        //note we only use 1 pixel of padding so not all formats are goood
         out.filter = _txt_supports_linear(phys, f) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
         return true;
     }

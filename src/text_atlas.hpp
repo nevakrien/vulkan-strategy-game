@@ -26,7 +26,6 @@ struct FontAtlasGPU {
     VkImage        image  = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkImageView    view   = VK_NULL_HANDLE;
-    VkSampler      sampler= VK_NULL_HANDLE;
     VkFormat       format = VK_FORMAT_UNDEFINED;
     uint32_t width = 0, height = 0;
 };
@@ -38,19 +37,23 @@ bool build_cpu_font_atlas(FT_Library ft, const char* font_path,
                           FontAtlasCPU& out,
                           const std::vector<uint32_t>& codepoints = {});
 
-// Build a complete GPU atlas (image+view+sampler) and upload pixels internally.
-// - queueFamily: queue family index for 'queue' (usually your graphics family)
-// - fmt/filter: pick from your probed caps (e.g., R8 + LINEAR, or fallback)
+// Build a complete GPU atlas (image+view+sampler(if not present)) and upload pixels internally.
 // On success, 'out' is ready in SHADER_READ_ONLY_OPTIMAL.
+// Cleanup is on caller for fail case
+//
+// note that not all formats are sensible because we use 1 pixel of padding
+// this is fine for most sensible one but be aware to avoid bleed
 VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
                               VkQueue queue, uint32_t queueFamily,
-                              VkFormat fmt, VkFilter filter,
+                              VkFormat fmt,
                               const FontAtlasCPU& cpu,
                               FontAtlasGPU& out);
 
+VkResult build_text_sampler(VkSampler* out,VkFilter filter,VkDevice device);
+
 // Destroy GPU resources created by build_font_atlas_gpu
 inline void destroy_gpu_font_atlas(VkDevice dev, FontAtlasGPU& gpu) {
-    if (gpu.sampler) vkDestroySampler(dev, gpu.sampler, nullptr);
+    // if (gpu.sampler) vkDestroySampler(dev, gpu.sampler, nullptr);
     if (gpu.view)    vkDestroyImageView(dev, gpu.view, nullptr);
     if (gpu.image)   vkDestroyImage(dev, gpu.image, nullptr);
     if (gpu.memory)  vkFreeMemory(dev, gpu.memory, nullptr);

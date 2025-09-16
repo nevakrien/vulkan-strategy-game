@@ -80,8 +80,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    VkExtent2D screen = g_vulkan.swapchain_extent.width ? g_vulkan.swapchain_extent
-                                                        : VkExtent2D{1280, 720};
+    VkExtent2D screen = g_vulkan.swapchain_extent;
     uint32_t px = choose_font_px_for_screen(screen,1/10.0);
 
     FontAtlasCPU cpu{};
@@ -94,8 +93,11 @@ int main(int argc, char** argv) {
     FontAtlasGPU gpu{};
     VK_CHECK(build_font_atlas_gpu(g_vulkan.device, g_vulkan.physical_device,
                                   g_vulkan.graphics_queue, g_vulkan.graphics_family,
-                                  caps.format, caps.filter,
+                                  caps.format,
                                   cpu, gpu));
+
+    VkSampler sampler = VK_NULL_HANDLE;
+    VK_CHECK(build_text_sampler(&sampler,caps.filter,g_vulkan.device));
 
     // 3) Render targets + command buffers + sync
     RenderTargets   rt;
@@ -146,7 +148,7 @@ int main(int argc, char** argv) {
         VK_CHECK(vkAllocateDescriptorSets(g_vulkan.device, &dsai, &ds));
 
         VkDescriptorImageInfo di{};
-        di.sampler = gpu.sampler;
+        di.sampler = sampler;
         di.imageView = gpu.view;
         di.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -294,6 +296,7 @@ int main(int argc, char** argv) {
     if (fs) vkDestroyShaderModule(g_vulkan.device, fs, nullptr);
     if (dp) vkDestroyDescriptorPool(g_vulkan.device, dp, nullptr);
     if (dsl) vkDestroyDescriptorSetLayout(g_vulkan.device, dsl, nullptr);
+    if (sampler) vkDestroySampler(g_vulkan.device,sampler,nullptr);
 
     destroy_gpu_font_atlas(g_vulkan.device, gpu);
     sync.shutdown(g_vulkan.device);

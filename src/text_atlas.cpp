@@ -30,12 +30,6 @@ static uint32_t find_mem_type(uint32_t typeBits, VkMemoryPropertyFlags req, VkPh
     return ~0u;
 }
 
-// Are sync2 entry points present?
-static bool has_sync2(VkDevice dev) {
-    auto* pfn = (PFN_vkCmdPipelineBarrier2)vkGetDeviceProcAddr(dev, "vkCmdPipelineBarrier2");
-    return pfn != nullptr;
-}
-
 // Classic barrier path (no sync2)
 static void classic_layout_transition(VkCommandBuffer cb, VkImage img,
                                       VkImageLayout oldLayout, VkImageLayout newLayout) {
@@ -108,6 +102,7 @@ bool build_cpu_font_atlas(FT_Library ft, const char* font_path,
         t.cp = cp; t.w=w; t.h=h; t.bx=g->bitmap_left; t.by=g->bitmap_top; t.adv=int(g->advance.x >> 6);
         t.pix.resize(size_t(std::max(0,w)) * std::max(0,h));
 
+        //copy without the padding
         if (w > 0 && h > 0) {
             const uint8_t* base = g->bitmap.buffer;
             if (pitch >= 0) {
@@ -167,9 +162,10 @@ bool build_cpu_font_atlas(FT_Library ft, const char* font_path,
     return true;
 }
 
+//this function can be optimized by taking in cb and fence
 VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
                               VkQueue queue, uint32_t queueFamily,
-                              VkFormat fmt, VkFilter filter,
+                              VkFormat fmt,
                               const FontAtlasCPU& cpu,
                               FontAtlasGPU& out)
 {
@@ -189,6 +185,7 @@ VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
     out.format = fmt;
     out.width  = cpu.width;
     out.height = cpu.height;
+
 
     // --- image ---
     {
@@ -235,26 +232,6 @@ VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
         iv.subresourceRange.baseArrayLayer = 0;
         iv.subresourceRange.layerCount     = 1;
         r = vkCreateImageView(device, &iv, nullptr, &out.view); if (r) goto FAIL;
-    }
-
-    // --- sampler ---
-    {
-        VkSamplerCreateInfo sci{};
-        sci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        sci.magFilter = filter; sci.minFilter = filter;
-        sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-        sci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sci.mipLodBias = 0.0f;
-        sci.anisotropyEnable = VK_FALSE;
-        sci.maxAnisotropy = 1.0f;
-        sci.compareEnable = VK_FALSE;
-        sci.compareOp = VK_COMPARE_OP_ALWAYS;
-        sci.minLod = 0.0f; sci.maxLod = 0.0f;
-        sci.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-        sci.unnormalizedCoordinates = VK_FALSE;
-        r = vkCreateSampler(device, &sci, nullptr, &out.sampler); if (r) goto FAIL;
     }
 
     // --- staging buffer ---
@@ -414,6 +391,27 @@ UPLOAD_CLEANUP:
     return VK_SUCCESS;
 
 FAIL:
-    destroy_gpu_font_atlas(device, out);
+    // destroy_gpu_font_atlas(device, out);
     return r;
+}
+
+//
+// --- sampler ---
+VkResult build_text_sampler(VkSampler* out,VkFilter filter,VkDevice device){
+    VkSamplerCreateInfo sci{};
+    sci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    sci.magFilter = filter; sci.minFilter = filter;
+    sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sci.mipLodBias = 0.0f;
+    sci.anisotropyEnable = VK_FALSE;
+    sci.maxAnisotropy = 1.0f;
+    sci.compareEnable = VK_FALSE;
+    sci.compareOp = VK_COMPARE_OP_ALWAYS;
+    sci.minLod = 0.0f; sci.maxLod = 0.0f;
+    sci.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    sci.unnormalizedCoordinates = VK_FALSE;
+    return vkCreateSampler(device, &sci, nullptr, out);
 }
