@@ -50,7 +50,6 @@ VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
                               const FontAtlasCPU& cpu,
                               FontAtlasGPU& out);
 
-VkResult build_text_sampler(VkSampler* out,VkFilter filter,VkDevice device);
 
 // Destroy GPU resources created by build_font_atlas_gpu
 inline void destroy_gpu_font_atlas(VkDevice dev, FontAtlasGPU& gpu) {

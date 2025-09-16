@@ -4,12 +4,13 @@
 #include <vector>
 #include <cstring>
 
-#include "platform.hpp"          // g_vulkan, platform_init/platform_shutdown, extern FT_Library free_type
-#include "render.hpp"            // your Vk helper builders + VK_CHECK
-#include "render_pipeline.hpp"   // render::fragment_vertex_stage_info(...)
-#include "shader_compile.hpp"    // shader::compile_glsl_to_spirv / shader::make_shader_module
-#include "text_format_caps.hpp"  // pick_text_caps(...)
-#include "text_atlas.hpp"        // build_cpu_font_atlas(...), build_font_atlas_gpu(...), destroy_gpu_font_atlas(...)
+#include "platform.hpp"
+#include "render.hpp"
+#include "render_pipeline.hpp"
+#include "shader_compile.hpp"
+#include "text_format_caps.hpp"
+#include "text_atlas.hpp"
+#include "text_render.hpp"
 
 // --- Fullscreen textured triangle shaders (no vertex buffers) ---
 static constexpr const char* kVS = R"GLSL(
@@ -173,15 +174,11 @@ int main(int argc, char** argv) {
 
     {
         // Layout
-        VkPipelineLayoutCreateInfo plci{};
-        plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        plci.setLayoutCount = 1;
-        plci.pSetLayouts = &dsl;
-        plci.pushConstantRangeCount = 0;
+        VkPipelineLayoutCreateInfo plci = render::layout_info(std::span{&dsl,1});
         VK_CHECK(vkCreatePipelineLayout(g_vulkan.device, &plci, nullptr, &pl));
 
         // Compile shaders
-        shader::Options opt; // your engine defaults (targets)
+        shader::Options opt;
         auto vres = shader::compile_glsl_to_spirv(EShLangVertex,   kVS, opt, "atlas_fullscreen.vert");
         auto fres = shader::compile_glsl_to_spirv(EShLangFragment, kFS, opt, "atlas_fullscreen.frag");
         if (!vres.ok) { std::fprintf(stderr, "VS compile failed:\n%s\n", vres.log.c_str()); std::abort(); }
@@ -191,103 +188,75 @@ int main(int argc, char** argv) {
 
         auto stages = render::fragment_vertex_stage_info(fs, vs);
 
-        // Fixed-function blocks
-        VkViewport vp{};
-        vp.x = 0.0f; vp.y = 0.0f;
-        vp.width  = float(g_vulkan.swapchain_extent.width);
-        vp.height = float(g_vulkan.swapchain_extent.height);
-        vp.minDepth = 0.0f; vp.maxDepth = 1.0f;
+        //view
+        VkViewport vp{
+            .x=0.f, .y=0.f,
+            .width=float(g_vulkan.swapchain_extent.width),
+            .height=float(g_vulkan.swapchain_extent.height),
+            .minDepth=0.f, .maxDepth=1.f
+        };
+        VkRect2D sc{ .offset={0,0}, .extent=g_vulkan.swapchain_extent };
+        auto vpst = render::viewport_state_info_static({&vp,1},{&sc,1});
 
-        VkRect2D sc{};
-        sc.offset = {0, 0};
-        sc.extent = g_vulkan.swapchain_extent;
-
-        auto vi   = render::vertex_input_info();
-        auto ia   = render::input_assembly_info();
-        auto vpst = render::viewport_state_info_static({&vp, 1}, {&sc, 1}); // <-- static
-        auto rs   = render::rasterization_state_info(VK_CULL_MODE_NONE);
-        auto ms   = render::multisample_state_info();
-
-        VkPipelineColorBlendAttachmentState cbAttach[] = { render::no_blend };
-        auto cb = render::color_blend_state(cbAttach);
-
-        VkGraphicsPipelineCreateInfo gpci =
-            render::graphics_pipeline_info(
-                stages,
-                &vi, &ia, &vpst, &rs, &ms, &cb,
-                pl, rt.render_pass,
-                /*subpass*/0
-            );
-
-        VK_CHECK(vkCreateGraphicsPipelines(g_vulkan.device, VK_NULL_HANDLE, 1, &gpci, nullptr, &gp));
+        //pipline
+        const VkPipelineColorBlendAttachmentState blend = render::no_blend; // or alpha_blend
+        VK_CHECK(render::create_graphics_pipeline_basic(
+            /*outPipe*/ gp,
+            /*device*/  g_vulkan.device,
+            /*stages*/  stages,
+            /*viewport*/&vpst,
+            /*layout*/  pl,
+            /*rp*/      rt.render_pass,
+            /*cull*/    VK_CULL_MODE_NONE,
+            /*blend*/   blend
+        ));
     }
 
+
     // 6) Render loop: draw the atlas on screen
-    const double t0 = SDL_GetTicks() / 1000.0;
-    (void)t0;
     while (!platform_should_quit()) {
-        // fence wait/reset
         VK_CHECK(vkWaitForFences(g_vulkan.device, 1, &sync.in_flight_fence, VK_TRUE, UINT64_MAX));
         VK_CHECK(vkResetFences(g_vulkan.device, 1, &sync.in_flight_fence));
 
-        // acquire
         uint32_t imageIndex = 0;
         VkResult acq = vkAcquireNextImageKHR(g_vulkan.device, g_vulkan.swapchain, UINT64_MAX,
                                              sync.image_available, VK_NULL_HANDLE, &imageIndex);
         if (acq == VK_ERROR_OUT_OF_DATE_KHR) break;
         VK_CHECK(acq);
 
-        // record
         VkCommandBuffer cb = cmd.buffers[imageIndex];
         VK_CHECK(vkResetCommandBuffer(cb, 0));
-
-        VkCommandBufferBeginInfo bi{};
-        bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         VK_CHECK(vkBeginCommandBuffer(cb, &bi));
 
         VkClearValue clear{};
         clear.color = {{0.05f, 0.05f, 0.08f, 1.0f}};
 
-        VkRenderPassBeginInfo rpbi{};
-        rpbi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpbi.renderPass = rt.render_pass;
-        rpbi.framebuffer = rt.framebuffers[imageIndex];
-        rpbi.renderArea.offset = {0,0};
-        rpbi.renderArea.extent = g_vulkan.swapchain_extent;
-        rpbi.clearValueCount = 1;
-        rpbi.pClearValues = &clear;
+        auto rpbi = render::render_pass_begin_info(
+            rt.render_pass,
+            rt.framebuffers[imageIndex],
+            g_vulkan.swapchain_extent,
+            std::span{&clear, 1},
+            VkOffset2D{0,0}
+        );
         vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
-
-        // viewport/scissor
-        VkViewport vp{};
-        vp.x = 0.0f; vp.y = 0.0f;
-        vp.width  = float(g_vulkan.swapchain_extent.width);
-        vp.height = float(g_vulkan.swapchain_extent.height);
-        vp.minDepth = 0.0f; vp.maxDepth = 1.0f;
-
-        VkRect2D sc{};
-        sc.offset = {0,0};
-        sc.extent = g_vulkan.swapchain_extent;
 
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, gp);
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pl,
-                                /*firstSet=*/0, /*descriptorSetCount=*/1, &ds,
-                                /*dynamicOffsetCount=*/0, /*pDynamicOffsets=*/nullptr);
+                                0, 1, &ds,
+                                0, nullptr);
 
-        vkCmdDraw(cb, /*vertexCount=*/3, /*instanceCount=*/1, /*firstVertex=*/0, /*firstInstance=*/0);
+        vkCmdDraw(cb, 3, 1, 0, 0);
 
         vkCmdEndRenderPass(cb);
         VK_CHECK(vkEndCommandBuffer(cb));
 
-        // submit + present
         VK_CHECK(sync.submit_one(g_vulkan.graphics_queue, imageIndex, cmd));
         VkResult pres = sync.present_one(g_vulkan.present_queue, g_vulkan.swapchain, imageIndex);
         if (pres == VK_ERROR_OUT_OF_DATE_KHR || pres == VK_SUBOPTIMAL_KHR) break;
         VK_CHECK(pres);
-
-        // for a smoke test, you could exit after 60 frames:
-        // if (SDL_GetTicks() > 1000 + 60*16) break;
     }
+
 
     // 7) Cleanup
     VK_CHECK(vkDeviceWaitIdle(g_vulkan.device));
