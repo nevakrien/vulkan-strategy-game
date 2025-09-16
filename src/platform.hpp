@@ -53,10 +53,15 @@ struct VulkanGlobals {
     std::vector<VkImageView>    swapchain_image_views;
     VkFormat                    swapchain_format = VK_FORMAT_UNDEFINED;
     VkExtent2D                  swapchain_extent = {};
+
+    // Viewport & scissor (match swapchain extent)
+    VkViewport                  viewport{};
+    VkRect2D                    scissor{};
 };
 
 
 extern VulkanGlobals g_vulkan;
+
 
 extern FT_Library free_type;
 

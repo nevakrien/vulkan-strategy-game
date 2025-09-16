@@ -11,6 +11,7 @@
 
 #include <vulkan/vulkan.h>
 #include "common.hpp"
+#include "platform.hpp"
 
 namespace render {
 inline constexpr VkPipelineLayoutCreateInfo layout_info(
@@ -142,6 +143,18 @@ viewport_state_info_dynamic(uint32_t count) {
     return info;
 }
 
+
+// inline VkPipelineViewportStateCreateInfo global_viewport_state_info() {
+//     static VkViewport vp{
+//         .x = 0.f, .y = 0.f,
+//         .width  = float(g_vulkan.swapchain_extent.width),
+//         .height = float(g_vulkan.swapchain_extent.height),
+//         .minDepth = 0.f, .maxDepth = 1.f
+//     };
+//     static VkRect2D sc{ .offset = {0,0}, .extent = g_vulkan.swapchain_extent };
+
+//     return render::viewport_state_info_static({&vp,1},{&sc,1});
+// }
 
 
 inline constexpr VkPipelineRasterizationStateCreateInfo
@@ -584,6 +597,7 @@ desc_write_image(VkDescriptorSet set,
     w.pImageInfo      = info;
     return w;
 }
+
 
 
 } // namespace render

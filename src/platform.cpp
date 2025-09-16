@@ -560,6 +560,21 @@ bool platform_init(uint32_t vulkan_version) {
     g_vulkan.swapchain_format = chosenFormat.format;
     g_vulkan.swapchain_extent = chosenExtent;
 
+    g_vulkan.viewport = VkViewport{
+        .x = 0.f,
+        .y = 0.f,
+        .width  = float(g_vulkan.swapchain_extent.width),
+        .height = float(g_vulkan.swapchain_extent.height),
+        .minDepth = 0.f,
+        .maxDepth = 1.f
+    };
+
+    g_vulkan.scissor = VkRect2D{
+        .offset = {0, 0},
+        .extent = g_vulkan.swapchain_extent
+    };
+
+
     g_vulkan.swapchain_image_views.resize(count);
     for (size_t i = 0; i < count; ++i) {
         VkImageViewCreateInfo info{};

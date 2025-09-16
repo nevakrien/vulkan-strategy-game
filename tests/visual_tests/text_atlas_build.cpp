@@ -157,15 +157,10 @@ int main(int argc, char** argv) {
 
         auto stages = render::fragment_vertex_stage_info(fs, vs);
 
-        //view
-        VkViewport vp{
-            .x=0.f, .y=0.f,
-            .width=float(g_vulkan.swapchain_extent.width),
-            .height=float(g_vulkan.swapchain_extent.height),
-            .minDepth=0.f, .maxDepth=1.f
-        };
-        VkRect2D sc{ .offset={0,0}, .extent=g_vulkan.swapchain_extent };
-        auto vpst = render::viewport_state_info_static({&vp,1},{&sc,1});
+        auto vpst = render::viewport_state_info_static(
+            { &g_vulkan.viewport, 1 },
+            { &g_vulkan.scissor, 1 }
+        );
 
         //pipline
         const VkPipelineColorBlendAttachmentState blend = render::no_blend; // or alpha_blend
