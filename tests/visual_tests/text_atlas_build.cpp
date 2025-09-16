@@ -117,54 +117,23 @@ int main(int argc, char** argv) {
     VkDescriptorSet        ds  = VK_NULL_HANDLE;
 
     {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = 0;
-        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        b.pImmutableSamplers = nullptr;
-
-        VkDescriptorSetLayoutCreateInfo dslci{};
-        dslci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dslci.bindingCount = 1;
-        dslci.pBindings = &b;
+        auto binding  = render::desc_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                     VK_SHADER_STAGE_FRAGMENT_BIT);
+        auto dslci    = render::desc_layout_info({&binding, 1});
         VK_CHECK(vkCreateDescriptorSetLayout(g_vulkan.device, &dslci, nullptr, &dsl));
 
-        VkDescriptorPoolSize ps{};
-        ps.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        ps.descriptorCount = 1;
-
-        VkDescriptorPoolCreateInfo dpci{};
-        dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        dpci.flags = 0;
-        dpci.maxSets = 1;
-        dpci.poolSizeCount = 1;
-        dpci.pPoolSizes = &ps;
+        auto ps       = render::desc_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
+        auto dpci     = render::desc_pool_info({&ps, 1}, /*max_sets=*/1);
         VK_CHECK(vkCreateDescriptorPool(g_vulkan.device, &dpci, nullptr, &dp));
 
-        VkDescriptorSetAllocateInfo dsai{};
-        dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        dsai.descriptorPool = dp;
-        dsai.descriptorSetCount = 1;
-        dsai.pSetLayouts = &dsl;
+        auto dsai     = render::desc_alloc_info(dp, {&dsl, 1});
         VK_CHECK(vkAllocateDescriptorSets(g_vulkan.device, &dsai, &ds));
 
-        VkDescriptorImageInfo di{};
-        di.sampler = sampler;
-        di.imageView = gpu.view;
-        di.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        VkWriteDescriptorSet w{};
-        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        w.dstSet = ds;
-        w.dstBinding = 0;
-        w.dstArrayElement = 0;
-        w.descriptorCount = 1;
-        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        w.pImageInfo = &di;
-
+        auto di       = render::desc_image_info(sampler, gpu.view);
+        auto w        = render::desc_write_image(ds, 0, &di);
         vkUpdateDescriptorSets(g_vulkan.device, 1, &w, 0, nullptr);
     }
+
 
     // 5) Pipeline layout + shaders + pipeline
     VkPipelineLayout pl = VK_NULL_HANDLE;

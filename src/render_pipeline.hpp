@@ -483,6 +483,107 @@ inline VkRenderPassBeginInfo render_pass_begin_info(
     return info;
 }
 
+// -----------------------------------------------------------------------------
+// Descriptor helpers (flat, prefixed with desc_)
+// -----------------------------------------------------------------------------
+
+inline constexpr VkDescriptorSetLayoutBinding
+desc_binding(uint32_t binding_idx,
+             VkDescriptorType type,
+             uint32_t descriptor_count,
+             VkShaderStageFlags stages,
+             std::span<const VkSampler> immutable_samplers = {})
+{
+    VkDescriptorSetLayoutBinding b{};
+    b.binding            = binding_idx;
+    b.descriptorType     = type;
+    b.descriptorCount    = descriptor_count;
+    b.stageFlags         = stages;
+    b.pImmutableSamplers = immutable_samplers.empty() ? nullptr
+                                                      : immutable_samplers.data();
+    return b;
+}
+
+inline constexpr VkDescriptorSetLayoutCreateInfo
+desc_layout_info(std::span<const VkDescriptorSetLayoutBinding> bindings,
+                 VkDescriptorSetLayoutCreateFlags flags = 0)
+{
+    VkDescriptorSetLayoutCreateInfo ci{};
+    ci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    ci.pNext        = nullptr;
+    ci.flags        = flags;
+    ci.bindingCount = static_cast<uint32_t>(bindings.size());
+    ci.pBindings    = bindings.data();
+    return ci;
+}
+
+inline constexpr VkDescriptorPoolSize
+desc_pool_size(VkDescriptorType type, uint32_t count)
+{
+    VkDescriptorPoolSize s{};
+    s.type            = type;
+    s.descriptorCount = count;
+    return s;
+}
+
+inline constexpr VkDescriptorPoolCreateInfo
+desc_pool_info(std::span<const VkDescriptorPoolSize> sizes,
+               uint32_t max_sets,
+               VkDescriptorPoolCreateFlags flags = 0)
+{
+    VkDescriptorPoolCreateInfo ci{};
+    ci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    ci.pNext         = nullptr;
+    ci.flags         = flags;
+    ci.maxSets       = max_sets;
+    ci.poolSizeCount = static_cast<uint32_t>(sizes.size());
+    ci.pPoolSizes    = sizes.data();
+    return ci;
+}
+
+inline constexpr VkDescriptorSetAllocateInfo
+desc_alloc_info(VkDescriptorPool pool,
+                std::span<const VkDescriptorSetLayout> layouts)
+{
+    VkDescriptorSetAllocateInfo ai{};
+    ai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    ai.pNext              = nullptr;
+    ai.descriptorPool     = pool;
+    ai.descriptorSetCount = static_cast<uint32_t>(layouts.size());
+    ai.pSetLayouts        = layouts.data();
+    return ai;
+}
+
+inline constexpr VkDescriptorImageInfo
+desc_image_info(VkSampler sampler,
+                VkImageView view,
+                VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+{
+    VkDescriptorImageInfo ii{};
+    ii.sampler     = sampler;
+    ii.imageView   = view;
+    ii.imageLayout = layout;
+    return ii;
+}
+
+inline constexpr VkWriteDescriptorSet
+desc_write_image(VkDescriptorSet set,
+                 uint32_t binding,
+                 const VkDescriptorImageInfo* info,
+                 uint32_t array_element = 0,
+                 VkDescriptorType type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+{
+    VkWriteDescriptorSet w{};
+    w.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    w.pNext           = nullptr;
+    w.dstSet          = set;
+    w.dstBinding      = binding;
+    w.dstArrayElement = array_element;
+    w.descriptorCount = 1;
+    w.descriptorType  = type;
+    w.pImageInfo      = info;
+    return w;
+}
 
 
 } // namespace render
