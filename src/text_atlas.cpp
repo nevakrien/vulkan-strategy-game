@@ -94,7 +94,7 @@ bool build_cpu_font_atlas(FT_Library ft, const char* font_path,
     size_t totalPx = 0;
     for (uint32_t cp : cps) {
         if (FT_Load_Char(face, cp, FT_LOAD_RENDER)) continue;
-        auto* g = face->glyph;
+        FT_GlyphSlot g = face->glyph;
         const int w = int(g->bitmap.width);
         const int h = int(g->bitmap.rows);
         const int pitch = g->bitmap.pitch;

@@ -103,8 +103,9 @@ static int run_visual_triangle_with_opts(const shader::Options& opt) {
     VkPipelineLayout pl = VK_NULL_HANDLE;
     VK_CHECK(vkCreatePipelineLayout(g_vulkan.device, &plci, nullptr, &pl));
 
-    // dynamic viewport/scissor
     auto vpst = render::viewport_state_info_dynamic(1);
+
+    // dynamic viewport/scissor
     VkDynamicState dynStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
     auto dyn = render::dynamic_state_info(dynStates);
 
@@ -154,16 +155,9 @@ static int run_visual_triangle_with_opts(const shader::Options& opt) {
         );
         vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
 
-        VkViewport vp{}; vp.x=0; vp.y=0;
-        vp.width=float(g_vulkan.swapchain_extent.width);
-        vp.height=float(g_vulkan.swapchain_extent.height);
-        vp.minDepth=0; vp.maxDepth=1;
-
-        VkRect2D sc{}; sc.offset={0,0}; sc.extent=g_vulkan.swapchain_extent;
-
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, gp);
-        vkCmdSetViewport(cb, 0, 1, &vp);
-        vkCmdSetScissor (cb, 0, 1, &sc);
+        vkCmdSetViewport(cb, 0, 1, &g_vulkan.viewport);
+        vkCmdSetScissor (cb, 0, 1, &g_vulkan.scissor);
         vkCmdPushConstants(cb, pl, VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float), &t);
         vkCmdDraw(cb, 3, 1, 0, 0);
 

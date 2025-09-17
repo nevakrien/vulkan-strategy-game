@@ -143,20 +143,6 @@ viewport_state_info_dynamic(uint32_t count) {
     return info;
 }
 
-
-// inline VkPipelineViewportStateCreateInfo global_viewport_state_info() {
-//     static VkViewport vp{
-//         .x = 0.f, .y = 0.f,
-//         .width  = float(g_vulkan.swapchain_extent.width),
-//         .height = float(g_vulkan.swapchain_extent.height),
-//         .minDepth = 0.f, .maxDepth = 1.f
-//     };
-//     static VkRect2D sc{ .offset = {0,0}, .extent = g_vulkan.swapchain_extent };
-
-//     return render::viewport_state_info_static({&vp,1},{&sc,1});
-// }
-
-
 inline constexpr VkPipelineRasterizationStateCreateInfo
 rasterization_state_info(
     VkCullModeFlags cullMode                      = VK_CULL_MODE_BACK_BIT,           // -> cullMode
@@ -312,7 +298,8 @@ color_blend_state(
 inline constexpr VkPipelineDynamicStateCreateInfo
 dynamic_state_info(std::span<const VkDynamicState> dynamic_states)
 {
-    VkPipelineDynamicStateCreateInfo dyn{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    VkPipelineDynamicStateCreateInfo dyn{};
+    dyn.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dyn.dynamicStateCount = dynamic_states.size();
     dyn.pDynamicStates = dynamic_states.data();
 
@@ -366,7 +353,7 @@ inline VkGraphicsPipelineCreateInfo graphics_pipeline_info(
     }
 
     if (flags & VK_PIPELINE_CREATE_DERIVATIVE_BIT) {
-        DEBUG_ASSERT((base_handle != VK_NULL_HANDLE) || (base_index >= 0) &&
+        DEBUG_ASSERT(((base_handle != VK_NULL_HANDLE) || (base_index >= 0)) &&
                "derivative pipeline requires base handle or non-negative base index");
     }
 #endif
@@ -486,7 +473,8 @@ inline VkRenderPassBeginInfo render_pass_begin_info(
     std::span<const VkClearValue> clears,
     VkOffset2D offset = {0, 0}
 ) {
-    VkRenderPassBeginInfo info{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    VkRenderPassBeginInfo info{};
+    info.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     info.renderPass = render_pass;
     info.framebuffer = framebuffer;
     info.renderArea.offset = offset;
@@ -598,7 +586,12 @@ desc_write_image(VkDescriptorSet set,
     return w;
 }
 
-
+inline uint32_t find_mem_type(VkPhysicalDevice phys, uint32_t bits, VkMemoryPropertyFlags req){
+    VkPhysicalDeviceMemoryProperties mp{}; vkGetPhysicalDeviceMemoryProperties(phys,&mp);
+    for(uint32_t i=0;i<mp.memoryTypeCount;i++)
+        if((bits&(1u<<i)) && (mp.memoryTypes[i].propertyFlags&req)==req) return i;
+    return UINT32_MAX;
+}
 
 } // namespace render
 
