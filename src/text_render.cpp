@@ -44,14 +44,14 @@ make_triangles_from_rect(float x0,float y0,float x1,float y1) {
     }};
 }
 
-inline std::array<RightTriangle,2>
-make_triangles_from_rect_skewed(float x0,float y0,float x1,float y1) {
-    float dx = x1 - x0, dy = y1 - y0;
-    return {{
-        RightTriangle{ x0,     y1,     +dx, -dy },
-        RightTriangle{ x1,     y0,     -dx, +dy },
-    }};
-}
+// inline std::array<RightTriangle,2>
+// make_triangles_from_rect_skewed(float x0,float y0,float x1,float y1) {
+//     float dx = x1 - x0, dy = y1 - y0;
+//     return {{
+//         RightTriangle{ x0,     y1,     +dx, -dy },
+//         RightTriangle{ x1,     y0,     -dx, +dy },
+//     }};
+// }
 
 // Build per-triangle instances for a whole line (two TriPair per glyph)
 void text_line_tripairs(std::vector<TriPair>& out,
@@ -73,12 +73,12 @@ void text_line_tripairs(std::vector<TriPair>& out,
 
         // screen quad (baseline at y; flip/adjust for your coord system)
         float x0 = pen + gi.bearingX * sx;
-        float y0 = y   - gi.bearingY * sy;
+        float y0 = y  + gi.bearingY * sy;
         float dx = gi.width  * sx;
-        float dy = gi.height * sy;
+        float dy = -gi.height * sy;
 
         auto scr2 = make_triangles_from_rect(x0, y0, x0+dx, y0+dy);
-        auto uv2  = make_triangles_from_rect_skewed(gi.u0, gi.v0, gi.u1, gi.v1);
+        auto uv2  = make_triangles_from_rect(gi.u0, gi.v0, gi.u1, gi.v1);
 
         out.push_back(TriPair{ scr2[0], uv2[0] });
         out.push_back(TriPair{ scr2[1], uv2[1] });
