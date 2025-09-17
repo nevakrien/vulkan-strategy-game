@@ -72,7 +72,7 @@ void print_libs();
 
 // Initializes SDL (fullscreen desktop) and Vulkan (instance, surface, device,
 // swapchain, image views). Uses a constant window title.
-bool platform_init(uint32_t vulkan_version = VK_API_VERSION_1_0,bool vsync=true);
+bool platform_init(uint32_t vulkan_version = VK_API_VERSION_1_0,bool vsync=true,uint32_t imageCount = 4);
 
 // Destroys all resources.
 void platform_shutdown();

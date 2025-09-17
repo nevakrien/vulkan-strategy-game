@@ -329,7 +329,7 @@ static bool pick_phisical_device(){
 
 }
 
-bool platform_init(uint32_t vulkan_version,bool vsync) {
+bool platform_init(uint32_t vulkan_version,bool vsync,uint32_t imageCount) {
     if (g_window) return true; // already init
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -530,10 +530,12 @@ bool platform_init(uint32_t vulkan_version,bool vsync) {
                                   caps.minImageExtent.height, caps.maxImageExtent.height);
     }
 
-    // 5) Image count (min+1, clamped to max if present)
-    uint32_t imageCount = caps.minImageCount + 1;
+    // 5) Image count
     if (caps.maxImageCount > 0 && imageCount > caps.maxImageCount)
         imageCount = caps.maxImageCount;
+
+    if (imageCount < caps.minImageCount)
+        imageCount = caps.minImageCount;
 
     // 6) Create swapchain
     uint32_t qfs[2] = { g_vulkan.graphics_family, g_vulkan.present_family };
