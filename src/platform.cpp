@@ -329,7 +329,7 @@ static bool pick_phisical_device(){
 
 }
 
-bool platform_init(uint32_t vulkan_version) {
+bool platform_init(uint32_t vulkan_version,bool vsync) {
     if (g_window) return true; // already init
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -494,12 +494,26 @@ bool platform_init(uint32_t vulkan_version) {
 
     // 3) Choose present mode (prefer MAILBOX, else FIFO)
     VkPresentModeKHR chosenMode = VK_PRESENT_MODE_FIFO_KHR;
-    for (auto m : modes) {
-        if (m == VK_PRESENT_MODE_MAILBOX_KHR) {
-            chosenMode = VK_PRESENT_MODE_MAILBOX_KHR;
-            break;
+    if(vsync){
+        for (auto m : modes) {
+            if (m == VK_PRESENT_MODE_MAILBOX_KHR) {
+                chosenMode = VK_PRESENT_MODE_MAILBOX_KHR;
+                break;
+            }
+        }
+    }else{
+        LOG("attempting no vsync...");
+        for (auto m : modes) {
+            if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) { // <-- checks IMMEDIATE
+                chosenMode = VK_PRESENT_MODE_IMMEDIATE_KHR; // <-- sets IMMEDIATE
+                LOG("found immidate mode");
+
+                break;
+            }
         }
     }
+
+    
 
     // 4) Choose extent
     VkExtent2D chosenExtent{};

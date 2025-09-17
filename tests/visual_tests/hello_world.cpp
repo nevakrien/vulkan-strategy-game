@@ -54,7 +54,8 @@ static VkShaderModule make_shader(VkDevice dev, EShLanguage stage,
 int main(int argc, char** argv) {
     (void)argc; (void)argv;
 
-    if (!platform_init()) {
+    //start no vsync
+    if (!platform_init(VK_API_VERSION_1_0,false)) {
         std::fprintf(stderr, "[text_render_hello] platform_init failed\n");
         return 1;
     }
@@ -183,16 +184,16 @@ int main(int argc, char** argv) {
             rt.render_pass, rt.framebuffers[imageIndex], g_vulkan.swapchain_extent, std::span{&clear,1});
         vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
 
-        // Draw the line
-        VK_CHECK(text.record_draw_line(g_vulkan.device,
-                                       g_vulkan.physical_device,
-                                       cb,
-                                       kMsg,
-                                       origin_x_ndc, origin_y_ndc,  // pen origin in NDC
-                                       sx, sy,                       // pixel->NDC scale
-                                       cpu,
-                                       color));
-        // FPS (bottom-left)
+        // // Draw the line
+        // VK_CHECK(text.record_draw_line(g_vulkan.device,
+        //                                g_vulkan.physical_device,
+        //                                cb,
+        //                                kMsg,
+        //                                origin_x_ndc, origin_y_ndc,  // pen origin in NDC
+        //                                sx, sy,                       // pixel->NDC scale
+        //                                cpu,
+        //                                color));
+        // FPS (top-left)
         std::string_view fps_sv(fps_buf);
         VK_CHECK(text.record_draw_line(g_vulkan.device, g_vulkan.physical_device, cb,
                                        fps_sv, fps_x_ndc, fps_y_ndc, sx_ndc, sy_ndc, cpu, color_fps));
