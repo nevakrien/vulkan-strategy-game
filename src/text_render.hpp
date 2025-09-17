@@ -52,7 +52,7 @@ layout(location=0) in  vec2 vUV;
 layout(location=0) out vec4 outColor;
 
 // combined image+sampler (VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-layout(set=1, binding=0) uniform sampler2D atlas;
+layout(set=0, binding=0) uniform sampler2D atlas;
 
 void main() {
     float a = texture(atlas, vUV).r;
@@ -130,8 +130,8 @@ public:
 
 private:
     // pipeline bits
-    VkDescriptorSetLayout m_set0_empty  = VK_NULL_HANDLE;
-	VkDescriptorSetLayout m_set1_atlas  = VK_NULL_HANDLE;
+	VkDescriptorSetLayout m_set  = VK_NULL_HANDLE;
+
     
     VkPipelineLayout      m_layout    = VK_NULL_HANDLE;
     VkPipeline            m_pipeline  = VK_NULL_HANDLE;

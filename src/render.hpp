@@ -37,21 +37,6 @@ struct CommandResources {
 
     void shutdown(VkDevice device);
     bool valid() const { return pool != VK_NULL_HANDLE; }
-
-    void record_clear_one(
-        size_t index,
-        const RenderTargets& rt,
-        VkExtent2D extent,
-        const VkClearColorValue& color,
-        VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
-    );
-
-    void record_clear_all(
-        const RenderTargets& rt,
-        VkExtent2D extent,
-        const VkClearColorValue& color,
-        VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
-    );
 };
 
 struct FrameSync {
@@ -88,7 +73,22 @@ struct FrameSync {
 };
 
 // struct GpuArena {
+//     VkBufferCreateInfo info;
+//     VkBuffer        buffer   = VK_NULL_HANDLE;
+//     VkDeviceMemory  mem      = VK_NULL_HANDLE;
+//     VkDeviceSize    used     = 0;
+//     VkDeviceSize    capacity = 0;
 
+//     //
+    
+
+//     //allways reallocs to the current spec
+//     VkResult realloc_buffer(VkPhysicalDevice phys,VkDevice device,size_t size);
+//     VkResult maybe_grow(VkPhysicalDevice phys,VkDevice device,size_t size){
+//         VkMemory
+//     }
+
+//     void destroy(VkDevice device); 
 // };
 
 #endif // RENDER_HPP

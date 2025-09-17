@@ -94,21 +94,16 @@ VkResult TextRenderer::build_pipeline_(VkDevice device,
                                          VkShaderModule vs, VkShaderModule fs,
                                          const VkViewport& vp, const VkRect2D& sc)
 {
-   	// set=0: EMPTY layout (0 bindings)
-    VkDescriptorSetLayoutCreateInfo l0{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
-    l0.bindingCount = 0;
-    VK_CHECK(vkCreateDescriptorSetLayout(device, &l0, nullptr, &m_set0_empty));
 
     // set=1: combined image sampler for FS
     VkDescriptorSetLayoutBinding b1 =
         render::desc_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
     auto l1 = render::desc_layout_info({ &b1, 1 });
-    VK_CHECK(vkCreateDescriptorSetLayout(device, &l1, nullptr, &m_set1_atlas));
+    VK_CHECK(vkCreateDescriptorSetLayout(device, &l1, nullptr, &m_set));
 
     // pipeline layout: [ set0_empty, set1_atlas ] + FS push-constant vec4
     VkPushConstantRange pc{ VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float)*4 };
-    std::array<VkDescriptorSetLayout,2> sets{ m_set0_empty, m_set1_atlas };
-    auto pl = render::layout_info(sets, { &pc, 1 });
+    auto pl = render::layout_info({ &m_set, 1 }, { &pc, 1 });
     VK_CHECK(vkCreatePipelineLayout(device, &pl, nullptr, &m_layout));
 
     // vertex input: one per-instance binding (binding 0)
@@ -142,6 +137,7 @@ VkResult TextRenderer::ensure_vb_capacity_(VkDevice device,
                                            VkPhysicalDevice phys,
                                            VkDeviceSize bytes)
 {
+    VkResult ans = VK_SUCCESS;
     if (bytes == 0) bytes = sizeof(TriPair);
     if (m_vb && bytes <= m_vbCap) return VK_SUCCESS;
 
@@ -151,11 +147,12 @@ VkResult TextRenderer::ensure_vb_capacity_(VkDevice device,
     m_vbCap = 0;
 
     // Create HOST_VISIBLE VB (so we can map per draw)
-    VkBufferCreateInfo bi{ VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    VkBufferCreateInfo bi{};
+    bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bi.size        = bytes;
     bi.usage       = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;   // no TRANSFER_DST when not staging
     bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (vkCreateBuffer(device, &bi, nullptr, &m_vb)) return VK_ERROR_INITIALIZATION_FAILED;
+    if (((ans=vkCreateBuffer(device, &bi, nullptr, &m_vb)))) return ans;
 
     VkMemoryRequirements mr{};
     vkGetBufferMemoryRequirements(device, m_vb, &mr);
@@ -166,14 +163,15 @@ VkResult TextRenderer::ensure_vb_capacity_(VkDevice device,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
     if (mt == UINT32_MAX) return VK_ERROR_MEMORY_MAP_FAILED;
 
-    VkMemoryAllocateInfo ai{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+    VkMemoryAllocateInfo ai{  };
+    ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     ai.allocationSize  = mr.size;
     ai.memoryTypeIndex = mt;
-    if (vkAllocateMemory(device, &ai, nullptr, &m_vbMem)) return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    if (vkBindBufferMemory(device, m_vb, m_vbMem, 0))     return VK_ERROR_MEMORY_MAP_FAILED;
+    if ((ans=vkAllocateMemory(device, &ai, nullptr, &m_vbMem))) return ans;
+    if ((ans=vkBindBufferMemory(device, m_vb, m_vbMem, 0)))     return ans;
 
     m_vbCap = mr.size;
-    return VK_SUCCESS;
+    return ans;
 }
 
 
@@ -198,7 +196,7 @@ VkResult TextRenderer::create(VkDevice device,
     auto pinfo = render::desc_pool_info({ &poolSize, 1 }, /*max_sets*/1);
     if (vkCreateDescriptorPool(device, &pinfo, nullptr, &m_pool)) return VK_ERROR_INITIALIZATION_FAILED;
 
-    auto ainfo = render::desc_alloc_info(m_pool, { &m_set1_atlas, 1 });
+    auto ainfo = render::desc_alloc_info(m_pool, { &m_set, 1 });
     if (vkAllocateDescriptorSets(device, &ainfo, &m_ds)) return VK_ERROR_INITIALIZATION_FAILED;
 
     VkDescriptorImageInfo ii = render::desc_image_info(m_atlasSampler, m_atlasView,
@@ -236,19 +234,18 @@ VkResult TextRenderer::record_draw(VkDevice device,
     std::memcpy(mapped, pairs.data(), size_t(bytes));
     
     // Sync
-    VkMappedMemoryRange rng{ VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE };
+    VkMappedMemoryRange rng{};
+    rng.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
     rng.memory = m_vbMem;
     rng.offset = dst_off;
     rng.size   = bytes;
     vkFlushMappedMemoryRanges(device, 1, &rng);
 
-    // If memory were NON-coherent, you'd call vkFlushMappedMemoryRanges here,
-    // with offset/size rounded to nonCoherentAtomSize boundaries.
     vkUnmapMemory(device, m_vbMem);
 
     // Bind & draw using per-draw VB *offset*
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout, 1, 1, &m_ds, 0, nullptr);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout, 0, 1, &m_ds, 0, nullptr);
     vkCmdPushConstants(cb, m_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float)*4, rgba);
 
     VkBuffer buf = m_vb;
@@ -284,11 +281,10 @@ void TextRenderer::destroy(VkDevice device)
     if (m_pool)  vkDestroyDescriptorPool(device, m_pool, nullptr);
     if (m_pipeline) vkDestroyPipeline(device, m_pipeline, nullptr);
     if (m_layout)   vkDestroyPipelineLayout(device, m_layout, nullptr);
-    if (m_set0_empty)vkDestroyDescriptorSetLayout(device, m_set0_empty, nullptr);
-    if (m_set1_atlas)vkDestroyDescriptorSetLayout(device, m_set1_atlas, nullptr);
+    if (m_set)vkDestroyDescriptorSetLayout(device, m_set, nullptr);
 
     m_vb = VK_NULL_HANDLE; m_vbMem = VK_NULL_HANDLE; m_vbCap = 0;
-    m_set0_empty = VK_NULL_HANDLE; m_set1_atlas = VK_NULL_HANDLE;
+    m_set = VK_NULL_HANDLE;
     m_layout = VK_NULL_HANDLE; m_pipeline = VK_NULL_HANDLE;
     m_pool = VK_NULL_HANDLE; m_ds = VK_NULL_HANDLE;
     m_atlasView = VK_NULL_HANDLE; m_atlasSampler = VK_NULL_HANDLE;
