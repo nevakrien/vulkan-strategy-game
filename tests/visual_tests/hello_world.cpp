@@ -114,7 +114,6 @@ int main(int argc, char** argv) {
 
     // Pre-reserve for worst-case glyph count (2 triangles per glyph)
     constexpr std::string_view kMsg = "Hello, world!";
-    VK_CHECK(text.reserve_instances(g_vulkan.device, g_vulkan.physical_device, /*instances*/ uint32_t(kMsg.size()*2)));
 
     // Pixel→NDC scale so RightTriangle positions are in clip space
     const float sx_ndc = 2.0f / float(screen.width);
@@ -142,11 +141,15 @@ int main(int argc, char** argv) {
     const float fps_x_ndc = -1.0f + sx_ndc * fps_x_px;
     const float fps_y_ndc = -0.95f - sy_ndc * measure_y_px(cpu);
 
-    const float color_fps[4] = {0.6f, 1.0f, 0.6f, 1.0f};
+    const float color_fps[4] = {0.6f, 0.0f, 0.6f, 1.0f};
 
     char   fps_buf[64] = "FPS: 0.0";
     double acc = 0.0; int frames = 0;
     auto   t_last = std::chrono::steady_clock::now();
+
+
+    VK_CHECK(text.maybe_realloc_instances(g_vulkan.device, g_vulkan.physical_device, 2*uint32_t(kMsg.size()+sizeof(fps_buf))));
+
 
     // ----- Render loop -----
     while (!platform_should_quit()) {
@@ -167,6 +170,8 @@ int main(int argc, char** argv) {
 
         VK_CHECK(vkWaitForFences(g_vulkan.device, 1, &sync.in_flight_fence, VK_TRUE, UINT64_MAX));
         VK_CHECK(vkResetFences(g_vulkan.device, 1, &sync.in_flight_fence));
+        text.frame_start();
+
 
         uint32_t imageIndex = 0;
         VkResult acq = vkAcquireNextImageKHR(g_vulkan.device, g_vulkan.swapchain, UINT64_MAX,
@@ -184,15 +189,15 @@ int main(int argc, char** argv) {
             rt.render_pass, rt.framebuffers[imageIndex], g_vulkan.swapchain_extent, std::span{&clear,1});
         vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
 
-        // // Draw the line
-        // VK_CHECK(text.record_draw_line(g_vulkan.device,
-        //                                g_vulkan.physical_device,
-        //                                cb,
-        //                                kMsg,
-        //                                origin_x_ndc, origin_y_ndc,  // pen origin in NDC
-        //                                sx, sy,                       // pixel->NDC scale
-        //                                cpu,
-        //                                color));
+        // Draw the line
+        VK_CHECK(text.record_draw_line(g_vulkan.device,
+                                       g_vulkan.physical_device,
+                                       cb,
+                                       kMsg,
+                                       origin_x_ndc, origin_y_ndc,  // pen origin in NDC
+                                       sx, sy,                       // pixel->NDC scale
+                                       cpu,
+                                       color));
         // FPS (top-left)
         std::string_view fps_sv(fps_buf);
         VK_CHECK(text.record_draw_line(g_vulkan.device, g_vulkan.physical_device, cb,

@@ -207,38 +207,52 @@ VkResult TextRenderer::create(VkDevice device,
 }
 
 VkResult TextRenderer::record_draw(VkDevice device,
-                                     VkPhysicalDevice phys,
-                                     VkCommandBuffer cb,
-									 std::span<const TriPair> pairs,
-                                     const float rgba[4])
+                                   VkPhysicalDevice /*phys*/,
+                                   VkCommandBuffer cb,
+                                   std::span<const TriPair> pairs,
+                                   const float rgba[4])
 {
-    if (!pairs.size()) return VK_SUCCESS;
+    if (pairs.empty()) return VK_SUCCESS;
 
-    // pack TriPair[] -> TriInstance[] (1:1)
-    std::vector<TriInstance> inst;
-    inst.resize(pairs.size());
-    for (uint32_t i=0;i<pairs.size();i++) {
-        const RightTriangle& s = pairs[i].screen;
-        const RightTriangle& u = pairs[i].uv;
-        inst[i] = TriInstance{ s.x0, s.y0, s.dx, s.dy, u.x0, u.y0, u.dx, u.dy };
+    const VkDeviceSize bytes   = VkDeviceSize(pairs.size()) * sizeof(TriInstance);
+    const VkDeviceSize dst_off = m_frameUsed;
+
+    // Safety: we must have reserved enough for the whole frame beforehand.
+    // Growing here would invalidate earlier recorded draws that bound m_vb.
+    if (dst_off + bytes > m_vbCap) {
+        // Either assert in debug or return a hard error in release.
+        DEBUG_ASSERT(!"TextRenderer: frame ran out of reserved VB space; call reserve_instances() with a larger count");
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
 
-    // ensure VB & upload
-    VkDeviceSize bytes = VkDeviceSize(inst.size()) * sizeof(TriInstance);
-    if (auto r = ensure_vb_capacity_(device, phys, bytes)) return r;
-    std::memcpy(m_vbPtr, inst.data(), size_t(bytes));
+    // Pack TriPair -> TriInstance *directly* into mapped memory at dst_off
+    auto* base_ptr = static_cast<std::byte*>(m_vbPtr) + dst_off;
+    auto* out      = reinterpret_cast<TriInstance*>(base_ptr);
 
-    // bind & draw
+    for (uint32_t i = 0; i < pairs.size(); ++i) {
+        const RightTriangle& s = pairs[i].screen;
+        const RightTriangle& u = pairs[i].uv;
+        out[i] = TriInstance{ s.x0, s.y0, s.dx, s.dy, u.x0, u.y0, u.dx, u.dy };
+    }
+
+    // Bind & draw using the per-draw vertex buffer *offset*
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout, 1, 1, &m_ds, 0, nullptr);
-    vkCmdPushConstants(cb, m_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float)*4, rgba);
+    vkCmdPushConstants(cb, m_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float) * 4, rgba);
 
-    VkBuffer buf = m_vb; VkDeviceSize off = 0;
-    vkCmdBindVertexBuffers(cb, 0, 1, &buf, &off);
+    VkBuffer buf = m_vb;
+    VkDeviceSize bind_off = dst_off;
+    vkCmdBindVertexBuffers(cb, 0, 1, &buf, &bind_off);
     vkCmdDraw(cb, /*vertexCount*/3, /*instanceCount*/pairs.size(), 0, 0);
 
+    // Advance append pointer for the next draw this frame
+    m_frameUsed += bytes;
+
+    // If memory is NON-coherent, you'd need to flush the written range here.
+    // (Your allocation uses HOST_COHERENT, so no flush is necessary.)
     return VK_SUCCESS;
 }
+
 
 VkResult TextRenderer::record_draw_line(VkDevice device,
                                           VkPhysicalDevice phys,
@@ -273,10 +287,19 @@ void TextRenderer::destroy(VkDevice device)
     m_atlasView = VK_NULL_HANDLE; m_atlasSampler = VK_NULL_HANDLE;
 }
 
-VkResult TextRenderer::reserve_instances(VkDevice device,
+VkResult TextRenderer::maybe_realloc_instances(VkDevice device,
                                            VkPhysicalDevice phys,
                                            uint32_t instance_capacity)
 {
     VkDeviceSize bytes = VkDeviceSize(instance_capacity) * sizeof(TriInstance);
     return ensure_vb_capacity_(device, phys, bytes);
+}
+
+VkResult TextRenderer::frame_start(VkDevice device,
+                                        VkPhysicalDevice phys,
+                                        uint32_t instance_capacity)
+{	
+	// Start a new frame worth of appends.
+    m_frameUsed = 0;
+	return maybe_realloc_instances(device,phys,instance_capacity);
 }

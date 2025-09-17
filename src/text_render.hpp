@@ -88,14 +88,27 @@ public:
                     VkImageView atlasView,
                     VkSampler   atlasSampler);
 
-    // 2) Record a draw given TriPairs (we pack to TriInstance internally).
+    // 2) resets the buffer
+    inline void frame_start() {m_frameUsed = 0;}
+
+    // 2) allocates memory for the currrent frame and resets the buffer
+    VkResult frame_start(VkDevice device,
+	                       VkPhysicalDevice phys,
+	                       uint32_t instance_capacity);
+
+    // 2b) allocates memory for the currrent frame
+    VkResult maybe_realloc_instances(VkDevice device,
+                                           VkPhysicalDevice phys,
+                                           uint32_t instance_capacity);
+
+    // 3) Record a draw given TriPairs (we pack to TriInstance internally).
     VkResult record_draw(VkDevice device,
                          VkPhysicalDevice phys,
                          VkCommandBuffer cb,
                          std::span<const TriPair> pairs,
                          const float rgba[4]);
 
-    // 2b) Convenience: build TriPairs for a line then draw.
+    // 3b) Convenience: build TriPairs for a line then draw.
     VkResult record_draw_line(VkDevice device,
                               VkPhysicalDevice phys,
                               VkCommandBuffer cb,
@@ -105,16 +118,14 @@ public:
                               const FontAtlasCPU& cpu,
                               const float rgba[4]);
 
-    // 3) Cleanup
+    // 4) Cleanup
     void destroy(VkDevice device);
 
     // expose the dynamic array (VB) if you want to fill it yourself
     VkBuffer     vertex_buffer() const { return m_vb; }
     VkDeviceSize vertex_buffer_capacity() const { return m_vbCap; }
 
-    VkResult reserve_instances(VkDevice device,
-                                           VkPhysicalDevice phys,
-                                           uint32_t instance_capacity);
+
 
 private:
     // pipeline bits
@@ -131,6 +142,7 @@ private:
     // dynamic vertex buffer (persistently mapped)
     VkBuffer        m_vb    = VK_NULL_HANDLE;
     VkDeviceMemory  m_vbMem = VK_NULL_HANDLE;
+    VkDeviceSize    m_frameUsed = 0;
     VkDeviceSize    m_vbCap = 0;
     void*           m_vbPtr = nullptr;
 
@@ -148,6 +160,8 @@ private:
     VkResult ensure_vb_capacity_(VkDevice device,
                                  VkPhysicalDevice phys,
                                  VkDeviceSize bytes);
+
+    
 };
 
 
