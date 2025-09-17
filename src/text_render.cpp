@@ -114,7 +114,7 @@ VkResult TextRenderer::build_pipeline_(VkDevice device,
     // vertex input: one per-instance binding (binding 0)
     VkVertexInputBindingDescription bind{
         .binding   = 0,
-        .stride    = sizeof(TriInstance),
+        .stride    = sizeof(TriPair),
         .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE
     };
     VkVertexInputAttributeDescription attrs[4] = {
@@ -139,39 +139,43 @@ VkResult TextRenderer::build_pipeline_(VkDevice device,
 }
 
 VkResult TextRenderer::ensure_vb_capacity_(VkDevice device,
-                                             VkPhysicalDevice phys,
-                                             VkDeviceSize bytes)
+                                           VkPhysicalDevice phys,
+                                           VkDeviceSize bytes)
 {
-    if (bytes == 0) bytes = sizeof(TriInstance); // avoid zero size edge case
+    if (bytes == 0) bytes = sizeof(TriPair);
     if (m_vb && bytes <= m_vbCap) return VK_SUCCESS;
 
-    if (m_vbPtr) { vkUnmapMemory(device, m_vbMem); m_vbPtr = nullptr; }
+    // Drop any existing
     if (m_vb)    { vkDestroyBuffer(device, m_vb, nullptr); m_vb = VK_NULL_HANDLE; }
     if (m_vbMem) { vkFreeMemory(device, m_vbMem, nullptr); m_vbMem = VK_NULL_HANDLE; }
     m_vbCap = 0;
 
-    VkBufferCreateInfo bi{};
-    bi.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bi.size = bytes;
-    bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    // Create HOST_VISIBLE VB (so we can map per draw)
+    VkBufferCreateInfo bi{ VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    bi.size        = bytes;
+    bi.usage       = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;   // no TRANSFER_DST when not staging
     bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     if (vkCreateBuffer(device, &bi, nullptr, &m_vb)) return VK_ERROR_INITIALIZATION_FAILED;
 
-    VkMemoryRequirements mr{}; vkGetBufferMemoryRequirements(device, m_vb, &mr);
-    uint32_t mt =  render::find_mem_type(phys, mr.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    VkMemoryRequirements mr{};
+    vkGetBufferMemoryRequirements(device, m_vb, &mr);
+
+    // Host-visible so we can map in record_draw
+    uint32_t mt = render::find_mem_type(
+        phys, mr.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
     if (mt == UINT32_MAX) return VK_ERROR_MEMORY_MAP_FAILED;
 
-    VkMemoryAllocateInfo ai{};
-    ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    ai.allocationSize = mr.size; ai.memoryTypeIndex = mt;
+    VkMemoryAllocateInfo ai{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+    ai.allocationSize  = mr.size;
+    ai.memoryTypeIndex = mt;
     if (vkAllocateMemory(device, &ai, nullptr, &m_vbMem)) return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    if (vkBindBufferMemory(device, m_vb, m_vbMem, 0))      return VK_ERROR_MEMORY_MAP_FAILED;
+    if (vkBindBufferMemory(device, m_vb, m_vbMem, 0))     return VK_ERROR_MEMORY_MAP_FAILED;
 
-    if (vkMapMemory(device, m_vbMem, 0, VK_WHOLE_SIZE, 0, &m_vbPtr)) return VK_ERROR_MEMORY_MAP_FAILED;
     m_vbCap = mr.size;
     return VK_SUCCESS;
 }
+
 
 // ---------------------- Public API ----------------------
 
@@ -214,42 +218,45 @@ VkResult TextRenderer::record_draw(VkDevice device,
 {
     if (pairs.empty()) return VK_SUCCESS;
 
-    const VkDeviceSize bytes   = VkDeviceSize(pairs.size()) * sizeof(TriInstance);
+    const VkDeviceSize bytes   = VkDeviceSize(pairs.size()) * sizeof(TriPair); // 32B each
     const VkDeviceSize dst_off = m_frameUsed;
 
-    // Safety: we must have reserved enough for the whole frame beforehand.
-    // Growing here would invalidate earlier recorded draws that bound m_vb.
+    // Ensure space was reserved for this frame
     if (dst_off + bytes > m_vbCap) {
-        // Either assert in debug or return a hard error in release.
         DEBUG_ASSERT(!"TextRenderer: frame ran out of reserved VB space; call reserve_instances() with a larger count");
         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
 
-    // Pack TriPair -> TriInstance *directly* into mapped memory at dst_off
-    auto* base_ptr = static_cast<std::byte*>(m_vbPtr) + dst_off;
-    auto* out      = reinterpret_cast<TriInstance*>(base_ptr);
+    // Map just the subrange we’ll write (HOST_COHERENT so no flush needed)
+    void* mapped = nullptr;
+    VkResult r = vkMapMemory(device, m_vbMem, dst_off, bytes, 0, &mapped);
+    if (r != VK_SUCCESS) return r;
 
-    for (uint32_t i = 0; i < pairs.size(); ++i) {
-        const RightTriangle& s = pairs[i].screen;
-        const RightTriangle& u = pairs[i].uv;
-        out[i] = TriInstance{ s.x0, s.y0, s.dx, s.dy, u.x0, u.y0, u.dx, u.dy };
-    }
+    // Copy TriPair bytes straight into the mapped range
+    std::memcpy(mapped, pairs.data(), size_t(bytes));
+    
+    // Sync
+    VkMappedMemoryRange rng{ VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE };
+    rng.memory = m_vbMem;
+    rng.offset = dst_off;
+    rng.size   = bytes;
+    vkFlushMappedMemoryRanges(device, 1, &rng);
 
-    // Bind & draw using the per-draw vertex buffer *offset*
+    // If memory were NON-coherent, you'd call vkFlushMappedMemoryRanges here,
+    // with offset/size rounded to nonCoherentAtomSize boundaries.
+    vkUnmapMemory(device, m_vbMem);
+
+    // Bind & draw using per-draw VB *offset*
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout, 1, 1, &m_ds, 0, nullptr);
-    vkCmdPushConstants(cb, m_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float) * 4, rgba);
+    vkCmdPushConstants(cb, m_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float)*4, rgba);
 
     VkBuffer buf = m_vb;
     VkDeviceSize bind_off = dst_off;
     vkCmdBindVertexBuffers(cb, 0, 1, &buf, &bind_off);
     vkCmdDraw(cb, /*vertexCount*/3, /*instanceCount*/pairs.size(), 0, 0);
 
-    // Advance append pointer for the next draw this frame
     m_frameUsed += bytes;
-
-    // If memory is NON-coherent, you'd need to flush the written range here.
-    // (Your allocation uses HOST_COHERENT, so no flush is necessary.)
     return VK_SUCCESS;
 }
 
@@ -291,7 +298,7 @@ VkResult TextRenderer::maybe_realloc_instances(VkDevice device,
                                            VkPhysicalDevice phys,
                                            uint32_t instance_capacity)
 {
-    VkDeviceSize bytes = VkDeviceSize(instance_capacity) * sizeof(TriInstance);
+    VkDeviceSize bytes = VkDeviceSize(instance_capacity) * sizeof(TriPair);
     return ensure_vb_capacity_(device, phys, bytes);
 }
 

@@ -15,7 +15,8 @@ VkResult build_text_sampler(VkSampler* out,VkFilter filter,VkDevice device);
 
 
 struct alignas(16) RightTriangle { float x0,y0, dx,dy; };
-struct alignas(16) TriPair       { RightTriangle screen, uv; };
+struct alignas(32) TriPair       { RightTriangle screen, uv; };
+static_assert(sizeof(TriPair) == 32, "TriInstance must be 32B");
 
 constexpr const char* text_render_vs = R"GLSL(
 #version 450
@@ -60,14 +61,14 @@ void main() {
 
 )GLSL";
 
-// Per-instance vertex payload (one instance == one triangle)
-struct alignas(32) TriInstance {
-    float sx0, sy0;  // screen base
-    float sdx, sdy;  // screen side
-    float u0,  v0;   // uv base
-    float du,  dv;   // uv side
-};
-static_assert(sizeof(TriInstance) == 32, "TriInstance must be 32B");
+// // Per-instance vertex payload (one instance == one triangle)
+// struct alignas(32) TriInstance {
+//     float sx0, sy0;  // screen base
+//     float sdx, sdy;  // screen side
+//     float u0,  v0;   // uv base
+//     float du,  dv;   // uv side
+// };
+// static_assert(sizeof(TriInstance) == 32, "TriInstance must be 32B");
 
 // Build per-triangle instances for a whole line (two TriPair per glyph)
 void text_line_tripairs(std::vector<TriPair>& out,

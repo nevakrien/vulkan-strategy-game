@@ -87,4 +87,8 @@ struct FrameSync {
     ) const;
 };
 
+// struct GpuArena {
+
+// };
+
 #endif // RENDER_HPP
