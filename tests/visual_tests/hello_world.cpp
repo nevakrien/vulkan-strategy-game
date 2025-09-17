@@ -13,6 +13,7 @@
 #include "text_format_caps.hpp"
 #include "text_atlas.hpp"
 #include "text_render.hpp"   // your VB-only TextRenderer API
+#include <chrono>
 
 static const char* kFallbackFonts[] = {
     "assets/Arialn.ttf",
@@ -132,8 +133,37 @@ int main(int argc, char** argv) {
 
     const float color[4] = {1, 1, 1, 1}; // white
 
+    // FPS padding and baseline (in pixels)
+    constexpr int pad_px = 8;
+    const float fps_x_px        = float(pad_px);
+
+    // pixel→NDC (you’re using +X right, +Y down viewport)
+    const float fps_x_ndc = -1.0f + sx_ndc * fps_x_px;
+    const float fps_y_ndc = -0.95f - sy_ndc * measure_y_px(cpu);
+
+    const float color_fps[4] = {0.6f, 1.0f, 0.6f, 1.0f};
+
+    char   fps_buf[64] = "FPS: 0.0";
+    double acc = 0.0; int frames = 0;
+    auto   t_last = std::chrono::steady_clock::now();
+
     // ----- Render loop -----
     while (!platform_should_quit()) {
+
+        // Update FPS (smoothed every ~0.25s)
+        {
+            auto t_now = std::chrono::steady_clock::now();
+            double dt = std::chrono::duration<double>(t_now - t_last).count();
+            t_last = t_now;
+            acc += dt; frames++;
+            if (acc >= 0.25) {
+                float fps = frames / acc;
+                acc = 0.0; frames = 0;
+                std::snprintf(fps_buf, sizeof(fps_buf), "FPS: %.1f", fps);
+            }
+        }
+
+
         VK_CHECK(vkWaitForFences(g_vulkan.device, 1, &sync.in_flight_fence, VK_TRUE, UINT64_MAX));
         VK_CHECK(vkResetFences(g_vulkan.device, 1, &sync.in_flight_fence));
 
@@ -162,7 +192,10 @@ int main(int argc, char** argv) {
                                        sx, sy,                       // pixel->NDC scale
                                        cpu,
                                        color));
-
+        // FPS (bottom-left)
+        std::string_view fps_sv(fps_buf);
+        VK_CHECK(text.record_draw_line(g_vulkan.device, g_vulkan.physical_device, cb,
+                                       fps_sv, fps_x_ndc, fps_y_ndc, sx_ndc, sy_ndc, cpu, color_fps));
         vkCmdEndRenderPass(cb);
         VK_CHECK(vkEndCommandBuffer(cb));
 
