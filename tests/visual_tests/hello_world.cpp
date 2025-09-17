@@ -151,8 +151,13 @@ int main(int argc, char** argv) {
     VK_CHECK(text.maybe_realloc_instances(g_vulkan.device, g_vulkan.physical_device, 2*uint32_t(kMsg.size()+sizeof(fps_buf))));
 
 
+    bool needs_draw = true;
+
+
     // ----- Render loop -----
     while (!platform_should_quit()) {
+
+        needs_draw = false; 
 
         // Update FPS (smoothed every ~0.25s)
         {
@@ -161,6 +166,8 @@ int main(int argc, char** argv) {
             t_last = t_now;
             acc += dt; frames++;
             if (acc >= 0.25) {
+                needs_draw = true;
+
                 float fps = frames / acc;
                 acc = 0.0; frames = 0;
                 std::snprintf(fps_buf, sizeof(fps_buf), "FPS: %.1f", fps);
@@ -179,10 +186,13 @@ int main(int argc, char** argv) {
         if (acq == VK_ERROR_OUT_OF_DATE_KHR) break;
         VK_CHECK(acq);
 
+        
+
         VkCommandBuffer cb = cmd.buffers[imageIndex];
         VK_CHECK(vkResetCommandBuffer(cb, 0));
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         VK_CHECK(vkBeginCommandBuffer(cb, &bi));
+
 
         VkClearValue clear{}; clear.color = {{0.06f, 0.06f, 0.09f, 1.0f}};
         auto rpbi = render::render_pass_begin_info(
@@ -206,6 +216,7 @@ int main(int argc, char** argv) {
         VK_CHECK(vkEndCommandBuffer(cb));
 
         VK_CHECK(sync.submit_one(g_vulkan.graphics_queue, imageIndex, cmd));
+        
         VkResult pres = sync.present_one(g_vulkan.present_queue, g_vulkan.swapchain, imageIndex);
         if (pres == VK_ERROR_OUT_OF_DATE_KHR || pres == VK_SUBOPTIMAL_KHR) break;
         VK_CHECK(pres);

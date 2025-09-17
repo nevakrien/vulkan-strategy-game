@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstring>
 #include <algorithm>
+#include "common.hpp"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -494,26 +495,34 @@ bool platform_init(uint32_t vulkan_version,bool vsync,uint32_t imageCount) {
 
     // 3) Choose present mode (prefer MAILBOX, else FIFO)
     VkPresentModeKHR chosenMode = VK_PRESENT_MODE_FIFO_KHR;
-    if(vsync){
-        for (auto m : modes) {
-            if (m == VK_PRESENT_MODE_MAILBOX_KHR) {
-                chosenMode = VK_PRESENT_MODE_MAILBOX_KHR;
-                break;
-            }
+    
+    if(!vsync){
+        if(vec_contains(modes,VK_PRESENT_MODE_IMMEDIATE_KHR)) {
+            chosenMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+            LOG("using IMMEDIATE");
         }
-    }else{
-        LOG("attempting no vsync...");
-        for (auto m : modes) {
-            if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) { // <-- checks IMMEDIATE
-                chosenMode = VK_PRESENT_MODE_IMMEDIATE_KHR; // <-- sets IMMEDIATE
-                LOG("found immidate mode");
-
-                break;
-            }
+        else{
+            LOG_ERROR("no non vsync method found");
         }
     }
 
-    
+    //keep looking
+    if(chosenMode==VK_PRESENT_MODE_FIFO_KHR){
+        if(vec_contains(modes,VK_PRESENT_MODE_MAILBOX_KHR)){
+            LOG("using MAILBOX");
+            chosenMode = VK_PRESENT_MODE_MAILBOX_KHR;
+        }        
+        else if(vec_contains(modes,VK_PRESENT_MODE_FIFO_LATEST_READY_KHR)){
+            LOG("using LATEST_READY FIFO");
+            chosenMode = VK_PRESENT_MODE_FIFO_LATEST_READY_KHR;
+        }
+        else if(vec_contains(modes,VK_PRESENT_MODE_FIFO_RELAXED_KHR)){
+            LOG("using RELAXED_FIFO");
+            chosenMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+        }else{
+            LOG("using FIFO");
+        }
+    }
 
     // 4) Choose extent
     VkExtent2D chosenExtent{};

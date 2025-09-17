@@ -51,6 +51,13 @@ target_link_libraries(mygame_fullprofile INTERFACE
   glslang::glslang-default-resource-limits
 )
 
+# Ensure vendored headers are seen BEFORE any system Vulkan headers
+target_include_directories(mygame_fullprofile
+  INTERFACE
+    BEFORE
+    third_party/Vulkan-Headers/include
+)
+
 
 # ---------------- Third-party: SDL3 (static, trimmed) ----------------
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
@@ -82,6 +89,8 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/freetype EXCLUDE_FROM_ALL)
 
 
 # ---------------- Vulkan (normalize to a target) ----------------
+add_subdirectory(third_party/Vulkan-Headers EXCLUDE_FROM_ALL)
+
 # Prefer a config/package if present; otherwise make an imported shim.
 find_package(Vulkan QUIET)  # defines Vulkan::Vulkan on many setups
 
