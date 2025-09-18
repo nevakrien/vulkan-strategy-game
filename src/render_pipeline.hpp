@@ -593,6 +593,9 @@ inline uint32_t find_mem_type(VkPhysicalDevice phys, uint32_t bits, VkMemoryProp
     return UINT32_MAX;
 }
 
+
+
+
 } // namespace render
 
 #endif //RENDER_PIPELINE_HPP

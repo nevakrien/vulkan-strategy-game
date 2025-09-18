@@ -54,7 +54,7 @@ make_triangles_from_rect(float x0,float y0,float x1,float y1) {
 // }
 
 // Build per-triangle instances for a whole line (two TriPair per glyph)
-void text_line_tripairs(std::vector<TriPair>& out,
+void text_line_draw_info(std::vector<TriPair>& out,
                         std::string_view s,
                         float x, float y,        // pen origin
                         float sx, float sy,      // text scale
@@ -133,47 +133,6 @@ VkResult TextRenderer::build_pipeline_(VkDevice device,
     );
 }
 
-VkResult TextRenderer::ensure_vb_capacity_(VkDevice device,
-                                           VkPhysicalDevice phys,
-                                           VkDeviceSize bytes)
-{
-    VkResult ans = VK_SUCCESS;
-    if (bytes == 0) bytes = sizeof(TriPair);
-    if (m_vb && bytes <= m_vbCap) return VK_SUCCESS;
-
-    // Drop any existing
-    if (m_vb)    { vkDestroyBuffer(device, m_vb, nullptr); m_vb = VK_NULL_HANDLE; }
-    if (m_vbMem) { vkFreeMemory(device, m_vbMem, nullptr); m_vbMem = VK_NULL_HANDLE; }
-    m_vbCap = 0;
-
-    // Create HOST_VISIBLE VB (so we can map per draw)
-    VkBufferCreateInfo bi{};
-    bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bi.size        = bytes;
-    bi.usage       = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;   // no TRANSFER_DST when not staging
-    bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (((ans=vkCreateBuffer(device, &bi, nullptr, &m_vb)))) return ans;
-
-    VkMemoryRequirements mr{};
-    vkGetBufferMemoryRequirements(device, m_vb, &mr);
-
-    // Host-visible so we can map in record_draw
-    uint32_t mt = render::find_mem_type(
-        phys, mr.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-    if (mt == UINT32_MAX) return VK_ERROR_MEMORY_MAP_FAILED;
-
-    VkMemoryAllocateInfo ai{  };
-    ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    ai.allocationSize  = mr.size;
-    ai.memoryTypeIndex = mt;
-    if ((ans=vkAllocateMemory(device, &ai, nullptr, &m_vbMem))) return ans;
-    if ((ans=vkBindBufferMemory(device, m_vb, m_vbMem, 0)))     return ans;
-
-    m_vbCap = mr.size;
-    return ans;
-}
-
 
 // ---------------------- Public API ----------------------
 
@@ -208,101 +167,70 @@ VkResult TextRenderer::create(VkDevice device,
     return VK_SUCCESS;
 }
 
-VkResult TextRenderer::record_draw(VkDevice device,
-                                   VkPhysicalDevice /*phys*/,
-                                   VkCommandBuffer cb,
-                                   std::span<const TriPair> pairs,
-                                   const float rgba[4])
+VkResult TextRenderer::record_draw( VkCommandBuffer cb,
+                                    MappedArena& arena,
+                                    std::span<const TriPair> pairs,
+                                    const float rgba[4])
 {
     if (pairs.empty()) return VK_SUCCESS;
 
-    const VkDeviceSize bytes   = VkDeviceSize(pairs.size()) * sizeof(TriPair); // 32B each
-    const VkDeviceSize dst_off = m_frameUsed;
+    // sanity: the arena must be usable as a vertex buffer
+    arena.assert_matches(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    // Ensure space was reserved for this frame
-    if (dst_off + bytes > m_vbCap) {
-        DEBUG_ASSERT(!"TextRenderer: frame ran out of reserved VB space; call reserve_instances() with a larger count");
-        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    const VkDeviceSize bytes = VkDeviceSize(pairs.size()) * sizeof(TriPair);
+
+    // allocate + copy into the persistently-mapped arena
+    UploadAlloc a{};
+    VkResult r = arena.allocAndWrite(pairs.data(), bytes, a, /*align=*/16);
+    if (r != VK_SUCCESS) {
+        // Caller owns growth policy (arena.realloc). We just report OOM.
+        return r; // VK_ERROR_OUT_OF_DEVICE_MEMORY if not enough room
     }
 
-    // Map just the subrange we’ll write (HOST_COHERENT so no flush needed)
-    void* mapped = nullptr;
-    VkResult r = vkMapMemory(device, m_vbMem, dst_off, bytes, 0, &mapped);
-    if (r != VK_SUCCESS) return r;
-
-    // Copy TriPair bytes straight into the mapped range
-    std::memcpy(mapped, pairs.data(), size_t(bytes));
-    
-    // Sync
-    VkMappedMemoryRange rng{};
-    rng.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-    rng.memory = m_vbMem;
-    rng.offset = dst_off;
-    rng.size   = bytes;
-    vkFlushMappedMemoryRanges(device, 1, &rng);
-
-    vkUnmapMemory(device, m_vbMem);
-
-    // Bind & draw using per-draw VB *offset*
+    // bind pipeline + descriptors
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout, 0, 1, &m_ds, 0, nullptr);
-    vkCmdPushConstants(cb, m_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float)*4, rgba);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_layout, 0, 1, &m_ds, 0, nullptr);
 
-    VkBuffer buf = m_vb;
-    VkDeviceSize bind_off = dst_off;
-    vkCmdBindVertexBuffers(cb, 0, 1, &buf, &bind_off);
-    vkCmdDraw(cb, /*vertexCount*/3, /*instanceCount*/pairs.size(), 0, 0);
+    // push color
+    vkCmdPushConstants(cb, m_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(float)*4, rgba);
 
-    m_frameUsed += bytes;
+    // bind vertex buffer at the arena offset
+    VkBuffer vb = a.buffer;
+    VkDeviceSize vbOff = a.offset;
+    vkCmdBindVertexBuffers(cb, 0, 1, &vb, &vbOff);
+
+    // each TriPair = one instance of a 3-vertex draw
+    vkCmdDraw(cb, /*vertexCount*/3, /*instanceCount*/uint32_t(pairs.size()),
+              /*firstVertex*/0, /*firstInstance*/0);
+
     return VK_SUCCESS;
 }
 
-
-VkResult TextRenderer::record_draw_line(VkDevice device,
-                                          VkPhysicalDevice phys,
-                                          VkCommandBuffer cb,
-                                          std::string_view s,
-                                          float x, float y,
-                                          float sx, float sy,
-                                          const FontAtlasCPU& cpu,
-                                          const float rgba[4])
+VkResult TextRenderer::record_draw_line( VkCommandBuffer cb,
+                                         MappedArena& arena,
+                                         std::string_view s,
+                                         float x, float y,
+                                         float sx, float sy,
+                                         const FontAtlasCPU& cpu,
+                                         const float rgba[4])
 {
     std::vector<TriPair> pairs;
-    text_line_tripairs(pairs, s, x, y, sx, sy, cpu);
-    return record_draw(device, phys, cb, pairs, rgba);
+    text_line_draw_info(pairs, s, x, y, sx, sy, cpu);
+    return record_draw(cb, arena, pairs, rgba);
 }
 
 void TextRenderer::destroy(VkDevice device)
 {
-    if (m_vbPtr) { vkUnmapMemory(device, m_vbMem); m_vbPtr=nullptr; }
-    if (m_vb)    vkDestroyBuffer(device, m_vb, nullptr);
-    if (m_vbMem) vkFreeMemory(device, m_vbMem, nullptr);
 
     if (m_pool)  vkDestroyDescriptorPool(device, m_pool, nullptr);
     if (m_pipeline) vkDestroyPipeline(device, m_pipeline, nullptr);
     if (m_layout)   vkDestroyPipelineLayout(device, m_layout, nullptr);
     if (m_set)vkDestroyDescriptorSetLayout(device, m_set, nullptr);
 
-    m_vb = VK_NULL_HANDLE; m_vbMem = VK_NULL_HANDLE; m_vbCap = 0;
     m_set = VK_NULL_HANDLE;
     m_layout = VK_NULL_HANDLE; m_pipeline = VK_NULL_HANDLE;
     m_pool = VK_NULL_HANDLE; m_ds = VK_NULL_HANDLE;
     m_atlasView = VK_NULL_HANDLE; m_atlasSampler = VK_NULL_HANDLE;
-}
-
-VkResult TextRenderer::maybe_realloc_instances(VkDevice device,
-                                           VkPhysicalDevice phys,
-                                           uint32_t instance_capacity)
-{
-    VkDeviceSize bytes = VkDeviceSize(instance_capacity) * sizeof(TriPair);
-    return ensure_vb_capacity_(device, phys, bytes);
-}
-
-VkResult TextRenderer::frame_start(VkDevice device,
-                                        VkPhysicalDevice phys,
-                                        uint32_t instance_capacity)
-{	
-	// Start a new frame worth of appends.
-    m_frameUsed = 0;
-	return maybe_realloc_instances(device,phys,instance_capacity);
 }

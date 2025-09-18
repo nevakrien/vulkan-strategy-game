@@ -73,19 +73,32 @@ struct FrameSync {
 };
 
 // struct GpuArena {
-//     VkBufferCreateInfo info;
+//     //data
+//     VkDeviceSize    used     = 0;
 //     VkBuffer        buffer   = VK_NULL_HANDLE;
 //     VkDeviceMemory  mem      = VK_NULL_HANDLE;
-//     VkDeviceSize    used     = 0;
 //     VkDeviceSize    capacity = 0;
 
-//     //
-    
+//     //info
+//     VkBufferCreateInfo info;
+//     uint32_t memory_type;
+
+//     inline VkDeviceSize alloc_handle(VkDeviceSize count){
+//         if(used+count>=capacity){
+//             return 0;
+//         }
+//         VkDeviceSize ans = used;
+//         used+=count;
+//         return ans;
+//     }
 
 //     //allways reallocs to the current spec
-//     VkResult realloc_buffer(VkPhysicalDevice phys,VkDevice device,size_t size);
-//     VkResult maybe_grow(VkPhysicalDevice phys,VkDevice device,size_t size){
-//         VkMemory
+//     VkResult realloc_buffer(VkDevice device,size_t size);
+//     inline VkResult maybe_grow(VkDevice device,size_t size){
+//         if(capacity<size)
+//             return realloc_buffer(device,size);
+//         else
+//             return VK_SUCCESS;
 //     }
 
 //     void destroy(VkDevice device); 

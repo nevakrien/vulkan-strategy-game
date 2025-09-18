@@ -201,18 +201,18 @@ VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
         ici.usage   = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        r = vkCreateImage(device, &ici, nullptr, &out.image); if (r) goto FAIL;
+        r = vkCreateImage(device, &ici, nullptr, &out.image); if (r) goto END;
 
         VkMemoryRequirements mr{}; vkGetImageMemoryRequirements(device, out.image, &mr);
         uint32_t mt = find_mem_type(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, phys);
-        if (mt == ~0u) { r = VK_ERROR_MEMORY_MAP_FAILED; goto FAIL; }
+        if (mt == ~0u) { r = VK_ERROR_MEMORY_MAP_FAILED; goto END; }
 
         VkMemoryAllocateInfo mai{};
         mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         mai.allocationSize = mr.size;
         mai.memoryTypeIndex = mt;
-        r = vkAllocateMemory(device, &mai, nullptr, &out.memory); if (r) goto FAIL;
-        r = vkBindImageMemory(device, out.image, out.memory, 0); if (r) goto FAIL;
+        r = vkAllocateMemory(device, &mai, nullptr, &out.memory); if (r) goto END;
+        r = vkBindImageMemory(device, out.image, out.memory, 0); if (r) goto END;
     }
 
     // --- view ---
@@ -231,7 +231,7 @@ VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
         iv.subresourceRange.levelCount   = 1;
         iv.subresourceRange.baseArrayLayer = 0;
         iv.subresourceRange.layerCount     = 1;
-        r = vkCreateImageView(device, &iv, nullptr, &out.view); if (r) goto FAIL;
+        r = vkCreateImageView(device, &iv, nullptr, &out.view); if (r) goto END;
     }
 
     // --- staging buffer ---
@@ -241,23 +241,23 @@ VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
         bci.size = cpu.pixels.size();
         bci.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        r = vkCreateBuffer(device, &bci, nullptr, &staging); if (r) goto FAIL;
+        r = vkCreateBuffer(device, &bci, nullptr, &staging); if (r) goto END;
 
         VkMemoryRequirements mr{}; vkGetBufferMemoryRequirements(device, staging, &mr);
         uint32_t mt = find_mem_type(mr.memoryTypeBits,
                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                     phys);
-        if (mt == ~0u) { r = VK_ERROR_MEMORY_MAP_FAILED; goto FAIL; }
+        if (mt == ~0u) { r = VK_ERROR_MEMORY_MAP_FAILED; goto END; }
 
         VkMemoryAllocateInfo mai{};
         mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         mai.allocationSize = mr.size;
         mai.memoryTypeIndex = mt;
-        r = vkAllocateMemory(device, &mai, nullptr, &stagingMem); if (r) goto FAIL;
-        r = vkBindBufferMemory(device, staging, stagingMem, 0); if (r) goto FAIL;
+        r = vkAllocateMemory(device, &mai, nullptr, &stagingMem); if (r) goto END;
+        r = vkBindBufferMemory(device, staging, stagingMem, 0); if (r) goto END;
 
         void* mapped = nullptr;
-        r = vkMapMemory(device, stagingMem, 0, VK_WHOLE_SIZE, 0, &mapped); if (r) goto FAIL;
+        r = vkMapMemory(device, stagingMem, 0, VK_WHOLE_SIZE, 0, &mapped); if (r) goto END;
         std::memcpy(mapped, cpu.pixels.data(), cpu.pixels.size());
         vkUnmapMemory(device, stagingMem);
     }
@@ -268,19 +268,19 @@ VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
         pci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         pci.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         pci.queueFamilyIndex = queueFamily;
-        r = vkCreateCommandPool(device, &pci, nullptr, &pool); if (r) goto UPLOAD_CLEANUP;
+        r = vkCreateCommandPool(device, &pci, nullptr, &pool); if (r) goto END;
 
         VkCommandBufferAllocateInfo cai{};
         cai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         cai.commandPool = pool;
         cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         cai.commandBufferCount = 1;
-        r = vkAllocateCommandBuffers(device, &cai, &cb); if (r) goto UPLOAD_CLEANUP;
+        r = vkAllocateCommandBuffers(device, &cai, &cb); if (r) goto END;
 
         VkCommandBufferBeginInfo bi{};
         bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        r = vkBeginCommandBuffer(cb, &bi); if (r) goto UPLOAD_CLEANUP;
+        r = vkBeginCommandBuffer(cb, &bi); if (r) goto END;
 
         // sync2 available?
         PFN_vkCmdPipelineBarrier2 pfnBarrier2 =
@@ -363,12 +363,12 @@ VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         }
 
-        r = vkEndCommandBuffer(cb); if (r) goto UPLOAD_CLEANUP;
+        r = vkEndCommandBuffer(cb); if (r) goto END;
 
         // submit + wait
         VkFenceCreateInfo fci{};
         fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        r = vkCreateFence(device, &fci, nullptr, &fence); if (r) goto UPLOAD_CLEANUP;
+        r = vkCreateFence(device, &fci, nullptr, &fence); if (r) goto END;
 
         VkSubmitInfo si{};
         si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -378,20 +378,18 @@ VkResult build_font_atlas_gpu(VkDevice device, VkPhysicalDevice phys,
         r = vkQueueSubmit(queue, 1, &si, fence);
         if (!r) r = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
         vkDestroyFence(device, fence, nullptr); fence = VK_NULL_HANDLE;
-        if (r) goto UPLOAD_CLEANUP;
+        if (r) goto END;
     }
 
-UPLOAD_CLEANUP:
+END:
     if (cb)   vkFreeCommandBuffers(device, pool, 1, &cb);
     if (pool) vkDestroyCommandPool(device, pool, nullptr);
     if (staging != VK_NULL_HANDLE) vkDestroyBuffer(device, staging, nullptr);
     if (stagingMem != VK_NULL_HANDLE) vkFreeMemory(device, stagingMem, nullptr);
 
-    if (r) goto FAIL;
-    return VK_SUCCESS;
-
-FAIL:
-    // destroy_gpu_font_atlas(device, out);
+    if(r) {
+        destroy_gpu_font_atlas(device, out);
+    }
     return r;
 }
 

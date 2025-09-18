@@ -147,17 +147,16 @@ int main(int argc, char** argv) {
     double acc = 0.0; int frames = 0;
     auto   t_last = std::chrono::steady_clock::now();
 
-
-    VK_CHECK(text.maybe_realloc_instances(g_vulkan.device, g_vulkan.physical_device, 2*uint32_t(kMsg.size()+sizeof(fps_buf))));
-
-
-    bool needs_draw = true;
+    MappedArena text_arena{};
+    VK_CHECK(text_arena.create(g_vulkan.device, g_vulkan.physical_device, 
+        sizeof(TriPair)*uint32_t(kMsg.size()+sizeof(fps_buf)),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+    ));
 
 
     // ----- Render loop -----
     while (!platform_should_quit()) {
 
-        needs_draw = false; 
 
         // Update FPS (smoothed every ~0.25s)
         {
@@ -166,7 +165,6 @@ int main(int argc, char** argv) {
             t_last = t_now;
             acc += dt; frames++;
             if (acc >= 0.25) {
-                needs_draw = true;
 
                 float fps = frames / acc;
                 acc = 0.0; frames = 0;
@@ -177,7 +175,7 @@ int main(int argc, char** argv) {
 
         VK_CHECK(vkWaitForFences(g_vulkan.device, 1, &sync.in_flight_fence, VK_TRUE, UINT64_MAX));
         VK_CHECK(vkResetFences(g_vulkan.device, 1, &sync.in_flight_fence));
-        text.frame_start();
+        text_arena.reset();
 
 
         uint32_t imageIndex = 0;
@@ -200,9 +198,7 @@ int main(int argc, char** argv) {
         vkCmdBeginRenderPass(cb, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
 
         // Draw the line
-        VK_CHECK(text.record_draw_line(g_vulkan.device,
-                                       g_vulkan.physical_device,
-                                       cb,
+        VK_CHECK(text.record_draw_line(cb,text_arena,
                                        kMsg,
                                        origin_x_ndc, origin_y_ndc,  // pen origin in NDC
                                        sx, sy,                       // pixel->NDC scale
@@ -210,7 +206,7 @@ int main(int argc, char** argv) {
                                        color));
         // FPS (top-left)
         std::string_view fps_sv(fps_buf);
-        VK_CHECK(text.record_draw_line(g_vulkan.device, g_vulkan.physical_device, cb,
+        VK_CHECK(text.record_draw_line(cb,text_arena,
                                        fps_sv, fps_x_ndc, fps_y_ndc, sx_ndc, sy_ndc, cpu, color_fps));
         vkCmdEndRenderPass(cb);
         VK_CHECK(vkEndCommandBuffer(cb));
@@ -225,6 +221,7 @@ int main(int argc, char** argv) {
     // ----- Cleanup -----
     VK_CHECK(vkDeviceWaitIdle(g_vulkan.device));
     text.destroy(g_vulkan.device);
+    text_arena.destroy(g_vulkan.device);
     if (vs) vkDestroyShaderModule(g_vulkan.device, vs, nullptr);
     if (fs) vkDestroyShaderModule(g_vulkan.device, fs, nullptr);
     if (sampler) vkDestroySampler(g_vulkan.device, sampler, nullptr);
